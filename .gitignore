@@ -1,0 +1,65 @@
+# Root level .gitignore for Gravita project
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Backend (NestJS/Node.js)
+backend/dist/
+backend/node_modules/
+backend/logs/
+backend/*.log
+backend/npm-debug.log*
+backend/pnpm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+backend/coverage/
+backend/.nyc_output/
+backend/drizzle/
+
+# Frontend (Flutter)
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.pub/
+frontend/.pub-cache/
+frontend/build/
+frontend/**/doc/api/
+frontend/**/ios/Flutter/.last_build_id
+frontend/.history/
+frontend/.svn/
+frontend/.swiftpm/
+frontend/migrate_working_dir/
+frontend/app.*.symbols
+frontend/app.*.map.json
+frontend/android/app/debug/
+frontend/android/app/profile/
+frontend/android/app/release/
+frontend/android/local.properties
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/ios/Flutter/ephemeral/
+frontend/macos/Flutter/ephemeral/
+
+# Logs
+*.log
+logs/
+
