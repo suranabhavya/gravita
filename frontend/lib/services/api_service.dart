@@ -64,5 +64,48 @@ class ApiService {
       headers: headers,
     );
   }
+
+  static Future<http.Response> put(String endpoint, Map<String, dynamic> body, {bool includeAuth = true}) async {
+    try {
+      final headers = await _getHeaders(includeAuth: includeAuth);
+      final response = await http.put(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: headers,
+        body: jsonEncode(body),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Request timeout. Please check your connection.');
+        },
+      );
+      return response;
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  static Future<http.Response> delete(String endpoint, {bool includeAuth = true}) async {
+    try {
+      final headers = await _getHeaders(includeAuth: includeAuth);
+      final response = await http.delete(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: headers,
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Request timeout. Please check your connection.');
+        },
+      );
+      return response;
+    } catch (e) {
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
 }
 

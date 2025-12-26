@@ -250,6 +250,8 @@ export class AuthService {
           companyId: user.companyId,
           email,
           invitedByUserId: userId,
+          teamId: inviteDto.teamId,
+          roleId: inviteDto.roleId,
           token,
           expiresAt,
           status: 'pending',
