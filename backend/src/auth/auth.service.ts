@@ -13,6 +13,7 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { LoginDto } from './dto/login.dto';
 import { EmailService } from '../email/email.service';
 import { randomUUID } from 'crypto';
+import { generateInviteCode } from '../company/utils/invite-code-generator';
 
 @Injectable()
 export class AuthService {
@@ -102,7 +103,48 @@ export class AuthService {
       })
       .returning();
 
+    // Generate OTP for email verification
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+
+    // Store OTP in database
+    await db
+      .insert(emailVerifications)
+      .values({
+        userId: newUser.id,
+        email: newUser.email,
+        otp,
+        expiresAt,
+      });
+
+    // Send OTP email
+    try {
+      console.log(`\n[AuthService] ========== SENDING OTP EMAIL (signupStep1) ==========`);
+      console.log(`[AuthService] User Email: ${newUser.email}`);
+      console.log(`[AuthService] User Name: ${newUser.name}`);
+      console.log(`[AuthService] OTP: ${otp}`);
+      console.log(`[AuthService] Calling emailService.sendOTPEmail...`);
+      
+      await this.emailService.sendOTPEmail(newUser.email, otp, newUser.name);
+      
+      console.log(`[AuthService] OTP email process completed for: ${newUser.email}`);
+      console.log(`[AuthService] =========================================\n`);
+    } catch (error) {
+      console.error('\n[AuthService] ========== ERROR SENDING OTP (signupStep1) ==========');
+      console.error('[AuthService] Failed to send OTP email:', error);
+      console.error('[AuthService] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      console.error('[AuthService] =========================================\n');
+      // Don't throw error - user is already created, just log it
+    }
+
     return {
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.name,
+        emailVerified: false,
+      },
       userId: newUser.id,
       email: newUser.email,
       name: newUser.name,
@@ -241,6 +283,7 @@ export class AuthService {
       }
 
       const token = randomUUID();
+      const inviteCode = generateInviteCode();
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -253,10 +296,38 @@ export class AuthService {
           teamId: inviteDto.teamId,
           roleId: inviteDto.roleId,
           token,
+          inviteCode,
           expiresAt,
           status: 'pending',
         })
         .returning();
+
+      // Send invitation email
+      try {
+        const [company] = await db
+          .select()
+          .from(companies)
+          .where(eq(companies.id, user.companyId))
+          .limit(1);
+
+        const [inviter] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+
+        await this.emailService.sendInvitationEmail({
+          to: email,
+          companyName: company?.name || 'Your Company',
+          inviterName: inviter?.name || 'Team Admin',
+          inviteCode,
+          token,
+          expiresAt,
+        });
+      } catch (emailError) {
+        console.error(`Failed to send invitation email to ${email}:`, emailError);
+        // Don't fail the invitation creation if email fails
+      }
 
       createdInvitations.push(invitation);
     }
@@ -372,6 +443,7 @@ export class AuthService {
           }
 
           const token = randomUUID();
+          const inviteCode = generateInviteCode();
           const expiresAt = new Date();
           expiresAt.setDate(expiresAt.getDate() + 7);
 
@@ -382,6 +454,7 @@ export class AuthService {
               email,
               invitedByUserId: userId,
               token,
+              inviteCode,
               expiresAt,
               status: 'pending',
             })

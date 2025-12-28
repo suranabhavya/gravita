@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/user_model.dart';
 import '../../models/company_model.dart';
-import '../../widgets/stats_card.dart';
 import '../../widgets/member_card.dart';
 import '../../widgets/glass_text_field.dart';
 
@@ -105,33 +104,6 @@ class _PeopleTabState extends State<PeopleTab> {
 
     return Column(
       children: [
-        // Stats Card
-        StatsCard(
-          title: 'Quick Stats',
-          items: [
-            StatItem(
-              icon: Icons.people,
-              label: 'Total Members',
-              value: '${widget.stats.totalMembers}',
-            ),
-            StatItem(
-              icon: Icons.person_off,
-              label: 'Unassigned',
-              value: '${widget.stats.unassignedMembers}',
-            ),
-            StatItem(
-              icon: Icons.group_work,
-              label: 'Teams',
-              value: '${widget.stats.totalTeams}',
-            ),
-            StatItem(
-              icon: Icons.business,
-              label: 'Departments',
-              value: '${widget.stats.totalDepartments}',
-            ),
-          ],
-        ),
-
         // Search
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),

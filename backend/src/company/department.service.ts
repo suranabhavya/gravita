@@ -8,7 +8,7 @@ import {
   users,
   teamMembers,
 } from '../database/schema';
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull, sql, inArray } from 'drizzle-orm';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { MoveTeamToDepartmentDto } from './dto/move-team-to-department.dto';
 
@@ -44,6 +44,42 @@ export class DepartmentService {
       .where(and(eq(departments.companyId, companyId), isNull(departments.deletedAt)))
       .orderBy(departments.level, departments.name);
 
+    // Get teams for each department
+    const departmentTeamsMap = new Map<string, any[]>();
+    if (companyDepartments.length > 0) {
+      const departmentIds = companyDepartments.map(d => d.id);
+      const allDepartmentTeams = await db
+        .select({
+          departmentId: departmentTeams.departmentId,
+          teamId: teams.id,
+          teamName: teams.name,
+          teamLocation: teams.location,
+          memberCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM ${teamMembers}
+            WHERE ${teamMembers.teamId} = ${teams.id}
+          )`,
+        })
+        .from(departmentTeams)
+        .innerJoin(teams, eq(departmentTeams.teamId, teams.id))
+        .where(and(
+          inArray(departmentTeams.departmentId, departmentIds),
+          isNull(teams.deletedAt),
+        ));
+
+      allDepartmentTeams.forEach((dt) => {
+        if (!departmentTeamsMap.has(dt.departmentId)) {
+          departmentTeamsMap.set(dt.departmentId, []);
+        }
+        departmentTeamsMap.get(dt.departmentId)!.push({
+          id: dt.teamId,
+          name: dt.teamName,
+          location: dt.teamLocation,
+          memberCount: dt.memberCount,
+        });
+      });
+    }
+
     // Build hierarchy
     const rootDepartments = companyDepartments.filter((dept) => !dept.parentDepartmentId);
     const childrenMap = new Map<string, typeof companyDepartments>();
@@ -59,8 +95,10 @@ export class DepartmentService {
 
     const buildTree = (parent: (typeof companyDepartments)[0]): any => {
       const children = childrenMap.get(parent.id) || [];
+      const teams = departmentTeamsMap.get(parent.id) || [];
       return {
         ...parent,
+        teams,
         children: children.map(buildTree),
       };
     };
@@ -208,7 +246,7 @@ export class DepartmentService {
         .from(teams)
         .where(
           and(
-            sql`${teams.id} = ANY(${createDepartmentDto.teamIds})`,
+            inArray(teams.id, createDepartmentDto.teamIds),
             eq(teams.companyId, companyId),
             isNull(teams.deletedAt),
           ),

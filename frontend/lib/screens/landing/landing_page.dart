@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../widgets/glass_container.dart';
 import '../auth/login_page.dart';
 import '../auth/signup_page.dart';
+import '../auth/invite_code_page.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
@@ -170,17 +171,46 @@ class _LandingPageState extends State<LandingPage> with SingleTickerProviderStat
           },
           isPrimary: true,
         ),
-        const SizedBox(height: 14),
-        _buildRoundedButton(
-          text: 'Create New Company',
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const SignupPage()),
-            );
-          },
-          isPrimary: false,
-        ),
+                  const SizedBox(height: 14),
+                  _buildRoundedButton(
+                    text: 'Create New Company',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const SignupPage()),
+                      );
+                    },
+                    isPrimary: false,
+                  ),
+                  const SizedBox(height: 32),
+                  Text(
+                    'Don\'t have an account yet?',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  // const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const InviteCodePage(),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Join with Invite Code',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
       ],
     );
   }

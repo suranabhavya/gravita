@@ -190,7 +190,9 @@ class _StructureTabState extends State<StructureTab> {
 
   Widget _buildDepartmentTree(DepartmentTree dept, {int level = 0}) {
     final isExpanded = _expandedDepartments[dept.id] ?? false;
-    final hasChildren = dept.children.isNotEmpty;
+    final hasChildren = dept.children.isNotEmpty || dept.teams.isNotEmpty;
+    final hasSubDepartments = dept.children.isNotEmpty;
+    final hasTeams = dept.teams.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,6 +237,14 @@ class _StructureTabState extends State<StructureTab> {
                             color: Colors.white.withValues(alpha: 0.7),
                           ),
                         ),
+                      if (dept.teamCount > 0 || dept.memberCount > 0)
+                        Text(
+                          '${dept.teamCount} teams • ${dept.memberCount} members',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -250,8 +260,54 @@ class _StructureTabState extends State<StructureTab> {
             ),
           ),
         ),
-        if (isExpanded && hasChildren) ...[
-          ...dept.children.map((child) => _buildDepartmentTree(child, level: level + 1)),
+        if (isExpanded) ...[
+          // Show teams first
+          if (hasTeams) ...[
+            ...dept.teams.map((team) => Container(
+              padding: EdgeInsets.only(left: (level + 1) * 24.0 + 20, top: 4, bottom: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.group_work,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      team.name,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ),
+                  if (team.location != null)
+                    Text(
+                      team.location!,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${team.memberCount} members',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+            const SizedBox(height: 8),
+          ],
+          // Show sub-departments
+          if (hasSubDepartments) ...[
+            ...dept.children.map((child) => _buildDepartmentTree(child, level: level + 1)),
+          ],
         ],
       ],
     );

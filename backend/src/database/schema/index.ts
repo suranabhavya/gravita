@@ -497,6 +497,7 @@ export const invitations = pgTable(
     teamId: uuid('team_id').references(() => teams.id, { onDelete: 'set null' }),
     roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
     token: varchar('token', { length: 255 }).notNull().unique(),
+    inviteCode: varchar('invite_code', { length: 10 }).notNull().unique(),
     expiresAt: timestamp('expires_at').notNull(),
     status: invitationStatusEnum('status').default('pending').notNull(),
     acceptedAt: timestamp('accepted_at'),
@@ -507,6 +508,9 @@ export const invitations = pgTable(
     index('idx_invitations_company').on(table.companyId, table.status),
     index('idx_invitations_token')
       .on(table.token)
+      .where(sql`${table.status} = 'pending'`),
+    index('idx_invitations_code')
+      .on(table.inviteCode)
       .where(sql`${table.status} = 'pending'`),
     index('idx_invitations_email').on(table.email, table.status),
   ],

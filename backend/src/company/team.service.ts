@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { db } from '../database';
 import { teams, teamMembers, users, companies, materialListings, departmentTeams } from '../database/schema';
-import { eq, and, isNull, sql, count, desc } from 'drizzle-orm';
+import { eq, and, isNull, sql, count, desc, inArray } from 'drizzle-orm';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { AddTeamMembersDto } from './dto/add-team-members.dto';
@@ -113,20 +113,35 @@ export class TeamService {
   }
 
   async createTeam(companyId: string, createTeamDto: CreateTeamDto) {
+    console.log('[TeamService] Creating team:', {
+      companyId,
+      name: createTeamDto.name,
+      memberIds: createTeamDto.memberIds,
+      teamLeadId: createTeamDto.teamLeadId,
+    });
+
     // Verify all members belong to the company
     const memberUsers = await db
       .select()
       .from(users)
       .where(
         and(
-          sql`${users.id} = ANY(${createTeamDto.memberIds})`,
+          inArray(users.id, createTeamDto.memberIds),
           eq(users.companyId, companyId),
           isNull(users.deletedAt),
         ),
       );
 
+    console.log('[TeamService] Found members:', {
+      requested: createTeamDto.memberIds.length,
+      found: memberUsers.length,
+      memberIds: memberUsers.map(u => u.id),
+    });
+
     if (memberUsers.length !== createTeamDto.memberIds.length) {
-      throw new BadRequestException('Some members do not belong to your company');
+      const foundIds = memberUsers.map(u => u.id);
+      const missingIds = createTeamDto.memberIds.filter(id => !foundIds.includes(id));
+      throw new BadRequestException(`Some members do not belong to your company. Missing: ${missingIds.join(', ')}`);
     }
 
     // Check if team name already exists
@@ -147,27 +162,38 @@ export class TeamService {
       throw new BadRequestException('Team lead must be one of the selected members');
     }
 
-    // Create team
-    const [newTeam] = await db
-      .insert(teams)
-      .values({
-        companyId,
-        name: createTeamDto.name,
-        description: createTeamDto.description,
-        location: createTeamDto.location,
-        teamLeadUserId: createTeamDto.teamLeadId || createTeamDto.memberIds[0], // Default to first member
-      })
-      .returning();
+    // Use transaction to ensure atomicity
+    const result = await db.transaction(async (tx) => {
+      // Create team
+      const [newTeam] = await tx
+        .insert(teams)
+        .values({
+          companyId,
+          name: createTeamDto.name,
+          description: createTeamDto.description,
+          location: createTeamDto.location,
+          teamLeadUserId: createTeamDto.teamLeadId || createTeamDto.memberIds[0], // Default to first member
+        })
+        .returning();
 
-    // Add members to team
-    await db.insert(teamMembers).values(
-      createTeamDto.memberIds.map((userId) => ({
-        teamId: newTeam.id,
-        userId,
-      })),
-    );
+      console.log('[TeamService] Team created:', newTeam.id);
 
-    return this.getTeamById(newTeam.id, companyId);
+      // Add members to team
+      if (createTeamDto.memberIds.length > 0) {
+        await tx.insert(teamMembers).values(
+          createTeamDto.memberIds.map((userId) => ({
+            teamId: newTeam.id,
+            userId,
+          })),
+        );
+        console.log('[TeamService] Team members added:', createTeamDto.memberIds.length);
+      }
+
+      return newTeam;
+    });
+
+    console.log('[TeamService] Team creation completed successfully');
+    return this.getTeamById(result.id, companyId);
   }
 
   async updateTeam(teamId: string, companyId: string, updateTeamDto: UpdateTeamDto) {

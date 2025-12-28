@@ -141,5 +141,113 @@ export class EmailService {
       throw new Error(`Failed to send verification email: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
+
+  async sendInvitationEmail(data: {
+    to: string;
+    companyName: string;
+    inviterName: string;
+    inviteCode: string;
+    token: string;
+    expiresAt: Date;
+  }): Promise<void> {
+    const enableEmailSending = this.configService.get<string>('ENABLE_EMAIL_SENDING') === 'true';
+    const appUrl = this.configService.get<string>('APP_URL') || 'gravita://invite';
+    const magicLink = `${appUrl}?token=${data.token}`;
+    const expiresInDays = Math.ceil((data.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+    if (!enableEmailSending) {
+      console.log('\n' + '='.repeat(80));
+      console.log('📧 INVITATION EMAIL (DEVELOPMENT MODE - NOT SENT)');
+      console.log('='.repeat(80));
+      console.log(`To: ${data.to}`);
+      console.log(`Company: ${data.companyName}`);
+      console.log(`Inviter: ${data.inviterName}`);
+      console.log(`Invite Code: ${data.inviteCode}`);
+      console.log(`Magic Link: ${magicLink}`);
+      console.log(`Token: ${data.token}`);
+      console.log(`Expires in: ${expiresInDays} day${expiresInDays !== 1 ? 's' : ''}`);
+      console.log(`Expires at: ${data.expiresAt.toISOString()}`);
+      console.log('='.repeat(80));
+      console.log('💡 To test: Use the Invite Code above in the app');
+      console.log('💡 Or click the Magic Link to test deep linking');
+      console.log('💡 To enable real email sending, set ENABLE_EMAIL_SENDING=true in .env');
+      console.log('='.repeat(80) + '\n');
+      return;
+    }
+
+    try {
+      const emailData = {
+        from: this.fromEmail,
+        to: data.to,
+        subject: `You've been invited to join ${data.companyName} on Gravita`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #0d2818 0%, #1a4d2e 100%); padding: 30px; border-radius: 12px; text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #22c55e; margin: 0; font-size: 32px; font-weight: 800;">Gravita</h1>
+                <p style="color: #ffffff; margin: 10px 0 0 0; font-size: 16px;">Recycling Marketplace</p>
+              </div>
+              
+              <div style="background: #f9fafb; padding: 30px; border-radius: 12px; margin-bottom: 20px;">
+                <h2 style="color: #0d2818; margin-top: 0;">You've been invited!</h2>
+                <p style="color: #4b5563; font-size: 16px;">
+                  <strong>${data.inviterName}</strong> has invited you to join <strong>${data.companyName}</strong> on Gravita.
+                </p>
+                
+                <div style="background: #ffffff; border: 2px solid #22c55e; border-radius: 8px; padding: 30px; margin: 30px 0; text-align: center;">
+                  <p style="color: #6b7280; font-size: 14px; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 1px;">Your Invite Code</p>
+                  <p style="color: #0d2818; font-size: 32px; font-weight: 700; letter-spacing: 4px; margin: 0; font-family: 'Courier New', monospace;">${data.inviteCode}</p>
+                  <p style="color: #6b7280; font-size: 12px; margin: 15px 0 0 0;">Enter this code in the app to join</p>
+                </div>
+
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${magicLink}" 
+                     style="display: inline-block; background: #22c55e; color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                    Accept Invitation
+                  </a>
+                </div>
+                <p style="color: #6b7280; font-size: 12px; text-align: center; margin-top: 15px;">
+                  Or click the button above to accept automatically
+                </p>
+                
+                <div style="background: #ffffff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                  <p style="color: #4b5563; font-size: 14px; margin: 0;">
+                    <strong>Two ways to join:</strong><br>
+                    1. Click the button above (magic link)<br>
+                    2. Enter code <strong>${data.inviteCode}</strong> in the app
+                  </p>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 14px; margin: 20px 0 0 0;">
+                  This invitation expires in ${expiresInDays} day${expiresInDays !== 1 ? 's' : ''}.
+                </p>
+              </div>
+              
+              <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 30px;">
+                If you didn't expect this invitation, you can safely ignore this email.
+              </p>
+            </body>
+          </html>
+        `,
+      };
+
+      const result = await this.resend.emails.send(emailData);
+
+      if (result.error) {
+        console.error('[EmailService] Failed to send invitation email:', result.error);
+        throw new Error(`Failed to send invitation email: ${result.error.message}`);
+      }
+
+      console.log('[EmailService] Invitation email sent successfully to:', data.to);
+    } catch (error) {
+      console.error('Failed to send invitation email:', error);
+      throw error;
+    }
+  }
 }
 

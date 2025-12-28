@@ -7,12 +7,16 @@ class TeamCard extends StatelessWidget {
   final TeamListItem team;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final bool isSelected;
+  final bool showCheckbox;
 
   const TeamCard({
     super.key,
     required this.team,
     this.onTap,
     this.onLongPress,
+    this.isSelected = false,
+    this.showCheckbox = false,
   });
 
   @override
@@ -22,10 +26,14 @@ class TeamCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.1),
-          width: 1,
+          color: isSelected
+              ? Colors.white
+              : Colors.white.withValues(alpha: 0.1),
+          width: isSelected ? 2 : 1,
         ),
-        color: Colors.black.withValues(alpha: 0.3),
+        color: isSelected
+            ? Colors.white.withValues(alpha: 0.1)
+            : Colors.black.withValues(alpha: 0.3),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
@@ -59,10 +67,16 @@ class TeamCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Icon(
-                          Icons.chevron_right,
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
+                        if (showCheckbox)
+                          Icon(
+                            isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                          )
+                        else
+                          Icon(
+                            Icons.chevron_right,
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
                       ],
                     ),
                     if (team.teamLeadName != null) ...[

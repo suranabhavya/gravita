@@ -10,6 +10,7 @@ import '../../services/user_service.dart';
 import '../../services/department_service.dart';
 import '../../services/invitation_service.dart';
 import '../../widgets/create_team_bottom_sheet.dart';
+import '../../widgets/create_department_bottom_sheet.dart';
 import 'people_tab.dart';
 import 'teams_tab.dart';
 import 'structure_tab.dart';
@@ -91,6 +92,104 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
     );
   }
 
+  Future<void> _handleCreateDepartment() async {
+    if (_teams.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Create teams first before creating departments'),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Get teams that are not assigned to any department
+    final assignedTeamIds = <String>{};
+    for (final dept in _departments) {
+      _collectTeamIds(dept, assignedTeamIds);
+    }
+    final unassignedTeams = _teams.where((t) => !assignedTeamIds.contains(t.id)).toList();
+
+    if (unassignedTeams.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All teams are already assigned to departments'),
+          ),
+        );
+      }
+      return;
+    }
+
+    // Get all company members for manager selection
+    final availableManagers = _membersData?.members ?? [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CreateDepartmentBottomSheet(
+        availableTeams: unassignedTeams,
+        existingDepartments: _departments,
+        availableManagers: availableManagers,
+        onSubmit: ({
+          required String name,
+          String? description,
+          String? parentDepartmentId,
+          String? managerId,
+          required List<String> teamIds,
+        }) async {
+          try {
+            // Close the bottom sheet first
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+
+            await _departmentService.createDepartment(
+              name: name,
+              description: description,
+              parentDepartmentId: parentDepartmentId,
+              managerId: managerId,
+              teamIds: teamIds,
+            );
+
+            // Reload all data
+            await _loadData();
+
+            // Switch to Structure tab to show the newly created department
+            // Use a small delay to ensure state update is complete
+            if (mounted) {
+              await Future.delayed(const Duration(milliseconds: 100));
+              if (_tabController.index != 2) {
+                _tabController.animateTo(2);
+              }
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Department created successfully')),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to create department: $e')),
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  void _collectTeamIds(DepartmentTree dept, Set<String> teamIds) {
+    for (final team in dept.teams) {
+      teamIds.add(team.id);
+    }
+    for (final child in dept.children) {
+      _collectTeamIds(child, teamIds);
+    }
+  }
+
   Future<void> _handleCreateTeam() async {
     if (_membersData == null) return;
 
@@ -112,6 +211,12 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
           String? teamLeadId,
         }) async {
           try {
+            // Close the bottom sheet first
+            if (mounted) {
+              Navigator.of(context).pop();
+            }
+            
+            // Create the team
             await _teamService.createTeam(
               name: name,
               description: description,
@@ -119,8 +224,18 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
               memberIds: memberIds,
               teamLeadId: teamLeadId,
             );
-            _loadData();
+            
+            // Reload all data
+            await _loadData();
+            
+            // Switch to Teams tab to show the newly created team
+            // Use a small delay to ensure state update is complete
             if (mounted) {
+              await Future.delayed(const Duration(milliseconds: 100));
+              if (_tabController.index != 1) {
+                _tabController.animateTo(1);
+              }
+              
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Team created successfully')),
               );
@@ -403,9 +518,11 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                             )
                           : TabBarView(
                               controller: _tabController,
+                              key: ValueKey('${_teams.length}-${_membersData?.members.length ?? 0}'), // Force rebuild when data changes
                               children: [
                                 if (_membersData != null && _company != null)
                                   PeopleTab(
+                                    key: ValueKey('people-${_membersData!.members.length}'),
                                     membersData: _membersData!,
                                     stats: _company!.stats ?? CompanyStats(
                                       totalMembers: 0,
@@ -424,6 +541,7 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                                 else
                                   const Center(child: Text('Loading...', style: TextStyle(color: Colors.white))),
                                 TeamsTab(
+                                  key: ValueKey('teams-${_teams.length}'),
                                   teams: _teams,
                                   unassignedCount: _membersData?.unassignedCount ?? 0,
                                   onTeamTap: (team) {
@@ -438,11 +556,10 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                                   },
                                 ),
                                 StructureTab(
+                                  key: ValueKey('structure-${_departments.length}'),
                                   departments: _departments,
                                   unassignedCount: _membersData?.unassignedCount ?? 0,
-                                  onCreateDepartment: () {
-                                    // Show create department sheet
-                                  },
+                                  onCreateDepartment: _handleCreateDepartment,
                                 ),
                               ],
                             ),

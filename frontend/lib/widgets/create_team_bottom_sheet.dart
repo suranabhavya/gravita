@@ -90,6 +90,7 @@ class _CreateTeamBottomSheetState extends State<CreateTeamBottomSheet> {
   }
 
   void _submit() {
+    // Don't close the sheet here - let the parent handle it after async operation
     widget.onSubmit(
       name: _nameController.text.trim(),
       description: _descriptionController.text.trim().isEmpty
@@ -101,7 +102,7 @@ class _CreateTeamBottomSheetState extends State<CreateTeamBottomSheet> {
       memberIds: _selectedMemberIds.toList(),
       teamLeadId: _selectedTeamLeadId,
     );
-    Navigator.of(context).pop();
+    // Note: Navigator.pop() is now handled in the parent after async operation completes
   }
 
   @override

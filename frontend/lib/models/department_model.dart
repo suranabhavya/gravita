@@ -136,6 +136,7 @@ class DepartmentTree {
   final int teamCount;
   final int memberCount;
   final List<DepartmentTree> children;
+  final List<DepartmentTeam> teams;
   final DateTime createdAt;
 
   DepartmentTree({
@@ -149,6 +150,7 @@ class DepartmentTree {
     required this.teamCount,
     required this.memberCount,
     required this.children,
+    required this.teams,
     required this.createdAt,
   });
 
@@ -165,6 +167,10 @@ class DepartmentTree {
       memberCount: json['memberCount'] ?? 0,
       children: (json['children'] as List<dynamic>?)
               ?.map((c) => DepartmentTree.fromJson(c))
+              .toList() ??
+          [],
+      teams: (json['teams'] as List<dynamic>?)
+              ?.map((t) => DepartmentTeam.fromJson(t))
               .toList() ??
           [],
       createdAt: DateTime.parse(json['createdAt']),

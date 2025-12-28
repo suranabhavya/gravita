@@ -8,12 +8,14 @@ class OtpVerificationPage extends StatefulWidget {
   final String userId;
   final String email;
   final String userName;
+  final Future<void> Function()? onVerified;
 
   const OtpVerificationPage({
     super.key,
     required this.userId,
     required this.email,
-    required this.userName,
+    this.userName = '',
+    this.onVerified,
   });
 
   @override
@@ -96,11 +98,36 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> with SingleTi
       await _authService.verifyOtp(widget.userId, otp);
 
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/home');
+        // If onVerified callback is provided, call it and await it
+        if (widget.onVerified != null) {
+          try {
+            await widget.onVerified!();
+            // Callback completed successfully, now navigate from this context
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed('/home');
+            }
+          } catch (e) {
+            // If callback fails, show error and reset loading
+            if (mounted) {
+              setState(() => _isLoading = false);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+                  backgroundColor: Colors.red.withValues(alpha: 0.8),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+        } else {
+          // No callback, navigate directly
+          Navigator.of(context).pushReplacementNamed('/home');
+        }
       }
     } catch (e) {
-      setState(() => _isLoading = false);
+      // OTP verification failed
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.toString().replaceFirst('Exception: ', '')),
