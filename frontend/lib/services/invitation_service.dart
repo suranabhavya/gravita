@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../models/permissions_model.dart';
 import 'api_service.dart';
 
 class InvitationService {
@@ -6,11 +7,13 @@ class InvitationService {
     required List<String> emails,
     String? teamId,
     String? roleId,
+    UserPermissions? permissions,
   }) async {
     final body = {
       'emails': emails,
       if (teamId != null) 'teamId': teamId,
       if (roleId != null) 'roleId': roleId,
+      if (permissions != null) 'permissions': permissions.toJson(),
     };
 
     final response = await ApiService.post('/invitations', body, includeAuth: true);

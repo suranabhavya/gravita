@@ -230,12 +230,13 @@ export class InvitationService {
 
     // Use a transaction to ensure all updates happen atomically
     await db.transaction(async (tx) => {
-      // 1. Update user's company to the invitation's company
+      // 1. Update user's company to the invitation's company and apply permissions
       await tx
         .update(users)
         .set({
           companyId: invitation.companyId,
           status: 'active', // Change from 'invited' to 'active'
+          permissions: invitation.permissions || {},
         })
         .where(eq(users.id, userId));
 

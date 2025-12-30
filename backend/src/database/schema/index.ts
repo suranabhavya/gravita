@@ -57,29 +57,55 @@ export type CompanySettings = {
 };
 
 export type RolePermissions = {
+  // People & Invitations
+  people?: {
+    view_members?: boolean;
+    invite_members?: boolean;
+    edit_members?: boolean;
+    remove_members?: boolean;
+    view_all_profiles?: boolean;
+  };
+  // Teams
+  teams?: {
+    view_teams?: boolean;
+    create_teams?: boolean;
+    edit_teams?: boolean;
+    delete_teams?: boolean;
+    manage_team_members?: boolean;
+    assign_team_leads?: boolean;
+  };
+  // Departments
+  departments?: {
+    view_departments?: boolean;
+    create_departments?: boolean;
+    edit_departments?: boolean;
+    delete_departments?: boolean;
+    move_departments?: boolean;
+    assign_team_to_department?: boolean;
+  };
+  // Listings
   listings?: {
     create?: boolean;
     edit_own?: boolean;
     edit_any?: boolean;
     delete?: boolean;
     approve?: boolean;
+    view_all?: boolean;
     max_approval_amount?: number;
   };
-  team?: {
-    view_members?: boolean;
-    invite_members?: boolean;
-    remove_members?: boolean;
-    manage_team?: boolean;
-  };
+  // Analytics
   analytics?: {
     view_own?: boolean;
     view_own_team?: boolean;
     view_department?: boolean;
     view_company?: boolean;
   };
+  // Settings & Administration
   settings?: {
     manage_company?: boolean;
     manage_roles?: boolean;
+    manage_permissions?: boolean;
+    view_settings?: boolean;
   };
 };
 
@@ -146,6 +172,9 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     status: statusEnum('status').default('active').notNull(),
+    permissions: jsonb('permissions')
+      .$type<RolePermissions>()
+      .default({}),
     metadata: jsonb('metadata').default({}),
     lastLoginAt: timestamp('last_login_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -496,6 +525,9 @@ export const invitations = pgTable(
       .notNull(),
     teamId: uuid('team_id').references(() => teams.id, { onDelete: 'set null' }),
     roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
+    permissions: jsonb('permissions')
+      .$type<RolePermissions>()
+      .default({}),
     token: varchar('token', { length: 255 }).notNull().unique(),
     inviteCode: varchar('invite_code', { length: 10 }).notNull().unique(),
     expiresAt: timestamp('expires_at').notNull(),

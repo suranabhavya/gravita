@@ -11,6 +11,7 @@ import {
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { MoveTeamToDepartmentDto } from './dto/move-team-to-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 
 @Injectable()
 export class DepartmentService {
@@ -370,6 +371,255 @@ export class DepartmentService {
     await db.delete(departmentTeams).where(eq(departmentTeams.teamId, teamId));
 
     return { success: true };
+  }
+
+  async updateDepartment(
+    departmentId: string,
+    companyId: string,
+    updateDepartmentDto: UpdateDepartmentDto,
+  ) {
+    // Verify department belongs to company
+    const [department] = await db
+      .select()
+      .from(departments)
+      .where(
+        and(
+          eq(departments.id, departmentId),
+          eq(departments.companyId, companyId),
+          isNull(departments.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!department) {
+      throw new NotFoundException('Department not found');
+    }
+
+    // If updating parent, validate and check for circular references
+    if (updateDepartmentDto.parentDepartmentId !== undefined) {
+      // If setting to null, it becomes top-level
+      if (updateDepartmentDto.parentDepartmentId === null) {
+        // Valid - making it top-level
+      } else {
+        // Verify new parent exists and belongs to company
+        const [newParent] = await db
+          .select()
+          .from(departments)
+          .where(
+            and(
+              eq(departments.id, updateDepartmentDto.parentDepartmentId),
+              eq(departments.companyId, companyId),
+              isNull(departments.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (!newParent) {
+          throw new NotFoundException('Parent department not found');
+        }
+
+        // Check for circular reference: new parent cannot be a descendant of this department
+        const isDescendant = await db
+          .select()
+          .from(departmentHierarchy)
+          .where(
+            and(
+              eq(departmentHierarchy.ancestorId, departmentId),
+              eq(departmentHierarchy.descendantId, updateDepartmentDto.parentDepartmentId),
+              sql`${departmentHierarchy.depth} > 0`, // Not self-reference
+            ),
+          )
+          .limit(1);
+
+        if (isDescendant.length > 0) {
+          throw new BadRequestException(
+            'Cannot move department: would create circular reference',
+          );
+        }
+
+        // Check if parent is the same as current parent
+        if (department.parentDepartmentId === updateDepartmentDto.parentDepartmentId) {
+          // No change needed
+          updateDepartmentDto.parentDepartmentId = undefined;
+        }
+      }
+    }
+
+    // Verify manager if provided
+    if (updateDepartmentDto.managerId !== undefined) {
+      if (updateDepartmentDto.managerId === null) {
+        // Removing manager - valid
+      } else {
+        const [managerUser] = await db
+          .select()
+          .from(users)
+          .where(
+            and(
+              eq(users.id, updateDepartmentDto.managerId),
+              eq(users.companyId, companyId),
+              isNull(users.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (!managerUser) {
+          throw new BadRequestException('Manager must belong to your company');
+        }
+      }
+    }
+
+    // Check name uniqueness if updating name
+    if (updateDepartmentDto.name && updateDepartmentDto.name !== department.name) {
+      const [existingDept] = await db
+        .select()
+        .from(departments)
+        .where(
+          and(
+            eq(departments.companyId, companyId),
+            eq(departments.name, updateDepartmentDto.name),
+            isNull(departments.deletedAt),
+            sql`${departments.id} != ${departmentId}`, // Exclude current department
+          ),
+        )
+        .limit(1);
+
+      if (existingDept) {
+        throw new BadRequestException('Department with this name already exists');
+      }
+    }
+
+    // Calculate new level and path if parent is changing
+    let newLevel = department.level;
+    let newPath = department.path;
+
+    if (updateDepartmentDto.parentDepartmentId !== undefined) {
+      if (updateDepartmentDto.parentDepartmentId === null) {
+        // Becoming top-level
+        newLevel = 1;
+        newPath = updateDepartmentDto.name || department.name;
+      } else {
+        // Getting a new parent
+        const [parentDept] = await db
+          .select()
+          .from(departments)
+          .where(eq(departments.id, updateDepartmentDto.parentDepartmentId))
+          .limit(1);
+
+        if (parentDept) {
+          newLevel = parentDept.level + 1;
+          newPath = `${parentDept.path || parentDept.name} > ${updateDepartmentDto.name || department.name}`;
+        }
+      }
+    } else if (updateDepartmentDto.name) {
+      // Name changed but parent didn't - update path
+      if (department.parentDepartmentId) {
+        const [parentDept] = await db
+          .select()
+          .from(departments)
+          .where(eq(departments.id, department.parentDepartmentId))
+          .limit(1);
+
+        if (parentDept) {
+          newPath = `${parentDept.path || parentDept.name} > ${updateDepartmentDto.name}`;
+        }
+      } else {
+        newPath = updateDepartmentDto.name;
+      }
+    }
+
+    // Update department
+    const updateData: any = {};
+    if (updateDepartmentDto.name) updateData.name = updateDepartmentDto.name;
+    if (updateDepartmentDto.description !== undefined)
+      updateData.description = updateDepartmentDto.description;
+    if (updateDepartmentDto.parentDepartmentId !== undefined)
+      updateData.parentDepartmentId = updateDepartmentDto.parentDepartmentId;
+    if (updateDepartmentDto.managerId !== undefined)
+      updateData.managerUserId = updateDepartmentDto.managerId;
+    if (newLevel !== department.level) updateData.level = newLevel;
+    if (newPath !== department.path) updateData.path = newPath;
+    updateData.updatedAt = new Date();
+
+    await db.update(departments).set(updateData).where(eq(departments.id, departmentId));
+
+    // If parent changed, rebuild hierarchy for this department and all descendants
+    if (updateDepartmentDto.parentDepartmentId !== undefined) {
+      // Delete old hierarchy records for this department and its descendants
+      const descendants = await db
+        .select({ id: departmentHierarchy.descendantId })
+        .from(departmentHierarchy)
+        .where(eq(departmentHierarchy.ancestorId, departmentId));
+
+      const descendantIds = [departmentId, ...descendants.map((d) => d.id)];
+
+      await db
+        .delete(departmentHierarchy)
+        .where(inArray(departmentHierarchy.descendantId, descendantIds));
+
+      // Rebuild hierarchy for this department
+      await this.buildHierarchy(departmentId, companyId);
+
+      // Rebuild hierarchy for all descendants
+      const directChildren = await db
+        .select()
+        .from(departments)
+        .where(eq(departments.parentDepartmentId, departmentId));
+
+      for (const child of directChildren) {
+        await this._rebuildDepartmentPathAndHierarchy(child.id, companyId);
+      }
+    }
+
+    return this.getDepartmentById(departmentId, companyId);
+  }
+
+  private async _rebuildDepartmentPathAndHierarchy(
+    departmentId: string,
+    companyId: string,
+  ) {
+    const [dept] = await db
+      .select()
+      .from(departments)
+      .where(eq(departments.id, departmentId))
+      .limit(1);
+
+    if (!dept) return;
+
+    // Recalculate path
+    let newPath = dept.name;
+    let newLevel = 1;
+
+    if (dept.parentDepartmentId) {
+      const [parent] = await db
+        .select()
+        .from(departments)
+        .where(eq(departments.id, dept.parentDepartmentId))
+        .limit(1);
+
+      if (parent) {
+        newLevel = parent.level + 1;
+        newPath = `${parent.path || parent.name} > ${dept.name}`;
+      }
+    }
+
+    // Update department
+    await db
+      .update(departments)
+      .set({ path: newPath, level: newLevel })
+      .where(eq(departments.id, departmentId));
+
+    // Rebuild hierarchy
+    await this.buildHierarchy(departmentId, companyId);
+
+    // Rebuild children
+    const children = await db
+      .select()
+      .from(departments)
+      .where(eq(departments.parentDepartmentId, departmentId));
+
+    for (const child of children) {
+      await this._rebuildDepartmentPathAndHierarchy(child.id, companyId);
+    }
   }
 }
 

@@ -1,12 +1,17 @@
-import { Controller, Get, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Param, Put, Body, UseGuards, Query } from '@nestjs/common';
 import { UserService } from './user.service';
+import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { UpdateUserPermissionsDto } from './dto/update-user-permissions.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly permissionsService: PermissionsService,
+  ) {}
 
   @Get('members')
   async getCompanyMembers(
@@ -29,7 +34,26 @@ export class UsersController {
 
   @Get(':id')
   async getUserById(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.userService.getUserById(id, user.companyId);
+    const userData = await this.userService.getUserById(id, user.companyId);
+    const permissions = await this.permissionsService.getUserPermissions(id, user.companyId);
+    return {
+      ...userData,
+      permissions,
+    };
+  }
+
+  @Get(':id/permissions')
+  async getUserPermissions(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.permissionsService.getUserPermissions(id, user.companyId);
+  }
+
+  @Put(':id/permissions')
+  async updateUserPermissions(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateUserPermissionsDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.permissionsService.updateUserPermissions(id, user.companyId, updateDto);
   }
 }
 

@@ -9,6 +9,7 @@ import { TeamService } from './team.service';
 import { DepartmentService } from './department.service';
 import { UserService } from './user.service';
 import { InvitationService } from './invitation.service';
+import { PermissionsService } from './permissions.service';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -20,8 +21,8 @@ import { AuthModule } from '../auth/auth.module';
     UsersController,
     InvitationController,
   ],
-  providers: [CompanyService, TeamService, DepartmentService, UserService, InvitationService],
-  exports: [CompanyService, TeamService, DepartmentService, UserService, InvitationService],
+  providers: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService],
+  exports: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService],
 })
 export class CompanyModule {}
 

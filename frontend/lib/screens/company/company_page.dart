@@ -11,9 +11,12 @@ import '../../services/department_service.dart';
 import '../../services/invitation_service.dart';
 import '../../widgets/create_team_bottom_sheet.dart';
 import '../../widgets/create_department_bottom_sheet.dart';
+import '../../widgets/permissions_selector.dart';
+import '../../models/permissions_model.dart';
 import 'people_tab.dart';
 import 'teams_tab.dart';
 import 'structure_tab.dart';
+import 'user_detail_page.dart';
 
 class CompanyPage extends StatefulWidget {
   const CompanyPage({super.key});
@@ -92,7 +95,7 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
     );
   }
 
-  Future<void> _handleCreateDepartment() async {
+  Future<void> _handleCreateDepartment({String? parentDepartmentId}) async {
     if (_teams.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -190,6 +193,82 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
     }
   }
 
+  void _showDepartmentContextMenu(DepartmentTree department) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF0d2818),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit, color: Colors.white),
+                title: Text(
+                  'Edit Department',
+                  style: GoogleFonts.inter(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleEditDepartment(department);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.swap_horiz, color: Colors.white),
+                title: Text(
+                  'Move Department',
+                  style: GoogleFonts.inter(color: Colors.white),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleMoveDepartment(department);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: Text(
+                  'Delete Department',
+                  style: GoogleFonts.inter(color: Colors.red),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  // TODO: Implement delete
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleEditDepartment(DepartmentTree department) async {
+    // TODO: Show edit department bottom sheet
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Edit department - Coming soon')),
+    );
+  }
+
+  Future<void> _handleMoveDepartment(DepartmentTree department) async {
+    // TODO: Show move department bottom sheet
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Move department - Coming soon')),
+    );
+  }
+
   Future<void> _handleCreateTeam() async {
     if (_membersData == null) return;
 
@@ -254,11 +333,26 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
 
   Widget _buildInviteMemberSheet() {
     final emailController = TextEditingController();
-    final emails = <String>[];
+    final emails = <String>[]; // This list persists across rebuilds
+    UserPermissions? selectedPermissions;
 
     return StatefulBuilder(
-      builder: (context, setState) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+      builder: (context, setState) {
+        // Helper function to add email
+        void addEmail(String email) {
+          final trimmedEmail = email.trim();
+          if (trimmedEmail.isNotEmpty && 
+              trimmedEmail.contains('@') && 
+              !emails.contains(trimmedEmail)) {
+            setState(() {
+              emails.add(trimmedEmail);
+              emailController.clear();
+            });
+          }
+        }
+
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
         decoration: const BoxDecoration(
           color: Color(0xFF0d2818),
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -342,23 +436,18 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                       suffixIcon: IconButton(
                         icon: const Icon(Icons.add, color: Colors.white),
                         onPressed: () {
-                          if (emailController.text.isNotEmpty &&
-                              emailController.text.contains('@')) {
-                            setState(() {
-                              emails.add(emailController.text.trim());
-                              emailController.clear();
-                            });
-                          }
+                          addEmail(emailController.text);
                         },
                       ),
                     ),
                     onSubmitted: (value) {
-                      if (value.isNotEmpty && value.contains('@')) {
-                        setState(() {
-                          emails.add(value.trim());
-                          emailController.clear();
-                        });
-                      }
+                      addEmail(value);
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  PermissionsSelector(
+                    onPermissionsChanged: (permissions) {
+                      selectedPermissions = permissions;
                     },
                   ),
                 ],
@@ -371,7 +460,10 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                     ? null
                     : () async {
                         try {
-                          await _invitationService.inviteMembers(emails: emails);
+                          await _invitationService.inviteMembers(
+                            emails: emails,
+                            permissions: selectedPermissions,
+                          );
                           if (mounted) {
                             Navigator.of(context).pop();
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -401,8 +493,9 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
               ),
             ),
           ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -532,7 +625,12 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                                     ),
                                     onInviteMember: (_) => _handleInviteMember(),
                                     onMemberTap: (user) {
-                                      // Navigate to user detail
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => UserDetailPage(user: user),
+                                        ),
+                                      );
                                     },
                                     onMemberMenuTap: (user) {
                                       // Show member menu
@@ -559,7 +657,15 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                                   key: ValueKey('structure-${_departments.length}'),
                                   departments: _departments,
                                   unassignedCount: _membersData?.unassignedCount ?? 0,
-                                  onCreateDepartment: _handleCreateDepartment,
+                                  onCreateDepartment: ({String? parentDepartmentId}) {
+                                    _handleCreateDepartment(parentDepartmentId: parentDepartmentId);
+                                  },
+                                  onDepartmentTap: (dept) {
+                                    // Could navigate to department detail page
+                                  },
+                                  onDepartmentLongPress: (dept) {
+                                    _showDepartmentContextMenu(dept);
+                                  },
                                 ),
                               ],
                             ),
@@ -586,8 +692,8 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
                   onPressed: _handleCreateTeam,
                   backgroundColor: Colors.white,
                   child: const Icon(Icons.group_add, color: Color(0xFF0d2818)),
-                ),
               ),
+            ),
           ],
         ),
       ),

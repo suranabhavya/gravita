@@ -193,19 +193,37 @@ export class AuthService {
         description: 'Full access to company resources',
         isSystemRole: true,
         permissions: {
+          people: {
+            view_members: true,
+            invite_members: true,
+            edit_members: true,
+            remove_members: true,
+            view_all_profiles: true,
+          },
+          teams: {
+            view_teams: true,
+            create_teams: true,
+            edit_teams: true,
+            delete_teams: true,
+            manage_team_members: true,
+            assign_team_leads: true,
+          },
+          departments: {
+            view_departments: true,
+            create_departments: true,
+            edit_departments: true,
+            delete_departments: true,
+            move_departments: true,
+            assign_team_to_department: true,
+          },
           listings: {
             create: true,
             edit_own: true,
             edit_any: true,
             delete: true,
             approve: true,
+            view_all: true,
             max_approval_amount: 999999999,
-          },
-          team: {
-            view_members: true,
-            invite_members: true,
-            remove_members: true,
-            manage_team: true,
           },
           analytics: {
             view_own: true,
@@ -216,6 +234,8 @@ export class AuthService {
           settings: {
             manage_company: true,
             manage_roles: true,
+            manage_permissions: true,
+            view_settings: true,
           },
         },
       })
@@ -295,6 +315,7 @@ export class AuthService {
           invitedByUserId: userId,
           teamId: inviteDto.teamId,
           roleId: inviteDto.roleId,
+          permissions: inviteDto.permissions || {},
           token,
           inviteCode,
           expiresAt,
@@ -392,19 +413,37 @@ export class AuthService {
           description: 'Full access to company resources',
           isSystemRole: true,
           permissions: {
+            people: {
+              view_members: true,
+              invite_members: true,
+              edit_members: true,
+              remove_members: true,
+              view_all_profiles: true,
+            },
+            teams: {
+              view_teams: true,
+              create_teams: true,
+              edit_teams: true,
+              delete_teams: true,
+              manage_team_members: true,
+              assign_team_leads: true,
+            },
+            departments: {
+              view_departments: true,
+              create_departments: true,
+              edit_departments: true,
+              delete_departments: true,
+              move_departments: true,
+              assign_team_to_department: true,
+            },
             listings: {
               create: true,
               edit_own: true,
               edit_any: true,
               delete: true,
               approve: true,
+              view_all: true,
               max_approval_amount: 999999999,
-            },
-            team: {
-              view_members: true,
-              invite_members: true,
-              remove_members: true,
-              manage_team: true,
             },
             analytics: {
               view_own: true,
@@ -415,6 +454,8 @@ export class AuthService {
             settings: {
               manage_company: true,
               manage_roles: true,
+              manage_permissions: true,
+              view_settings: true,
             },
           },
         })

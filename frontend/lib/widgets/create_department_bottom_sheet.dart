@@ -10,6 +10,7 @@ class CreateDepartmentBottomSheet extends StatefulWidget {
   final List<TeamListItem> availableTeams;
   final List<DepartmentTree> existingDepartments;
   final List<User> availableManagers;
+  final String? initialParentDepartmentId;
 
   final Function({
     required String name,
@@ -24,6 +25,7 @@ class CreateDepartmentBottomSheet extends StatefulWidget {
     required this.availableTeams,
     required this.existingDepartments,
     required this.availableManagers,
+    this.initialParentDepartmentId,
     required this.onSubmit,
   });
 
@@ -39,6 +41,12 @@ class _CreateDepartmentBottomSheetState extends State<CreateDepartmentBottomShee
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
   String? _selectedParentDepartmentId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedParentDepartmentId = widget.initialParentDepartmentId;
+  }
   
   // Step 2: Select Teams
   final Set<String> _selectedTeamIds = {};
