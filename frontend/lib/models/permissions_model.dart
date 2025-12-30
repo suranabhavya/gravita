@@ -28,12 +28,12 @@ class UserPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (people != null) 'people': people!.toJson(),
-      if (teams != null) 'teams': teams!.toJson(),
-      if (departments != null) 'departments': departments!.toJson(),
-      if (listings != null) 'listings': listings!.toJson(),
-      if (analytics != null) 'analytics': analytics!.toJson(),
-      if (settings != null) 'settings': settings!.toJson(),
+      'people': people?.toJson() ?? PeoplePermissions().toJson(),
+      'teams': teams?.toJson() ?? TeamsPermissions().toJson(),
+      'departments': departments?.toJson() ?? DepartmentsPermissions().toJson(),
+      'listings': listings?.toJson() ?? ListingsPermissions().toJson(),
+      'analytics': analytics?.toJson() ?? AnalyticsPermissions().toJson(),
+      'settings': settings?.toJson() ?? SettingsPermissions().toJson(),
     };
   }
 
@@ -83,11 +83,11 @@ class PeoplePermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (viewMembers != null) 'view_members': viewMembers,
-      if (inviteMembers != null) 'invite_members': inviteMembers,
-      if (editMembers != null) 'edit_members': editMembers,
-      if (removeMembers != null) 'remove_members': removeMembers,
-      if (viewAllProfiles != null) 'view_all_profiles': viewAllProfiles,
+      'view_members': viewMembers ?? false,
+      'invite_members': inviteMembers ?? false,
+      'edit_members': editMembers ?? false,
+      'remove_members': removeMembers ?? false,
+      'view_all_profiles': viewAllProfiles ?? false,
     };
   }
 }
@@ -122,12 +122,12 @@ class TeamsPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (viewTeams != null) 'view_teams': viewTeams,
-      if (createTeams != null) 'create_teams': createTeams,
-      if (editTeams != null) 'edit_teams': editTeams,
-      if (deleteTeams != null) 'delete_teams': deleteTeams,
-      if (manageTeamMembers != null) 'manage_team_members': manageTeamMembers,
-      if (assignTeamLeads != null) 'assign_team_leads': assignTeamLeads,
+      'view_teams': viewTeams ?? false,
+      'create_teams': createTeams ?? false,
+      'edit_teams': editTeams ?? false,
+      'delete_teams': deleteTeams ?? false,
+      'manage_team_members': manageTeamMembers ?? false,
+      'assign_team_leads': assignTeamLeads ?? false,
     };
   }
 }
@@ -162,12 +162,12 @@ class DepartmentsPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (viewDepartments != null) 'view_departments': viewDepartments,
-      if (createDepartments != null) 'create_departments': createDepartments,
-      if (editDepartments != null) 'edit_departments': editDepartments,
-      if (deleteDepartments != null) 'delete_departments': deleteDepartments,
-      if (moveDepartments != null) 'move_departments': moveDepartments,
-      if (assignTeamToDepartment != null) 'assign_team_to_department': assignTeamToDepartment,
+      'view_departments': viewDepartments ?? false,
+      'create_departments': createDepartments ?? false,
+      'edit_departments': editDepartments ?? false,
+      'delete_departments': deleteDepartments ?? false,
+      'move_departments': moveDepartments ?? false,
+      'assign_team_to_department': assignTeamToDepartment ?? false,
     };
   }
 }
@@ -205,12 +205,12 @@ class ListingsPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (create != null) 'create': create,
-      if (editOwn != null) 'edit_own': editOwn,
-      if (editAny != null) 'edit_any': editAny,
-      if (delete != null) 'delete': delete,
-      if (approve != null) 'approve': approve,
-      if (viewAll != null) 'view_all': viewAll,
+      'create': create ?? false,
+      'edit_own': editOwn ?? false,
+      'edit_any': editAny ?? false,
+      'delete': delete ?? false,
+      'approve': approve ?? false,
+      'view_all': viewAll ?? false,
       if (maxApprovalAmount != null) 'max_approval_amount': maxApprovalAmount,
     };
   }
@@ -240,10 +240,10 @@ class AnalyticsPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (viewOwn != null) 'view_own': viewOwn,
-      if (viewOwnTeam != null) 'view_own_team': viewOwnTeam,
-      if (viewDepartment != null) 'view_department': viewDepartment,
-      if (viewCompany != null) 'view_company': viewCompany,
+      'view_own': viewOwn ?? false,
+      'view_own_team': viewOwnTeam ?? false,
+      'view_department': viewDepartment ?? false,
+      'view_company': viewCompany ?? false,
     };
   }
 }
@@ -272,10 +272,10 @@ class SettingsPermissions {
 
   Map<String, dynamic> toJson() {
     return {
-      if (viewSettings != null) 'view_settings': viewSettings,
-      if (manageCompany != null) 'manage_company': manageCompany,
-      if (manageRoles != null) 'manage_roles': manageRoles,
-      if (managePermissions != null) 'manage_permissions': managePermissions,
+      'view_settings': viewSettings ?? false,
+      'manage_company': manageCompany ?? false,
+      'manage_roles': manageRoles ?? false,
+      'manage_permissions': managePermissions ?? false,
     };
   }
 }

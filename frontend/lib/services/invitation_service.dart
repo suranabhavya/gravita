@@ -1,19 +1,18 @@
 import 'dart:convert';
-import '../models/permissions_model.dart';
 import 'api_service.dart';
 
 class InvitationService {
   Future<Map<String, dynamic>> inviteMembers({
-    required List<String> emails,
+    required String email,
     String? teamId,
     String? roleId,
-    UserPermissions? permissions,
+    String? roleType, // 'admin', 'manager', 'member', 'viewer'
   }) async {
     final body = {
-      'emails': emails,
+      'emails': [email], // Backend expects array
       if (teamId != null) 'teamId': teamId,
       if (roleId != null) 'roleId': roleId,
-      if (permissions != null) 'permissions': permissions.toJson(),
+      if (roleType != null) 'roleType': roleType,
     };
 
     final response = await ApiService.post('/invitations', body, includeAuth: true);

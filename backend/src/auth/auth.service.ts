@@ -191,53 +191,14 @@ export class AuthService {
         companyId,
         name: 'Company Admin',
         description: 'Full access to company resources',
+        roleType: 'admin',
         isSystemRole: true,
         permissions: {
-          people: {
-            view_members: true,
-            invite_members: true,
-            edit_members: true,
-            remove_members: true,
-            view_all_profiles: true,
-          },
-          teams: {
-            view_teams: true,
-            create_teams: true,
-            edit_teams: true,
-            delete_teams: true,
-            manage_team_members: true,
-            assign_team_leads: true,
-          },
-          departments: {
-            view_departments: true,
-            create_departments: true,
-            edit_departments: true,
-            delete_departments: true,
-            move_departments: true,
-            assign_team_to_department: true,
-          },
-          listings: {
-            create: true,
-            edit_own: true,
-            edit_any: true,
-            delete: true,
-            approve: true,
-            view_all: true,
-            max_approval_amount: 999999999,
-          },
-          analytics: {
-            view_own: true,
-            view_own_team: true,
-            view_department: true,
-            view_company: true,
-          },
-          settings: {
-            manage_company: true,
-            manage_roles: true,
-            manage_permissions: true,
-            view_settings: true,
-          },
+          canManageStructure: true,
+          canApproveListings: true,
+          canAccessSettings: true,
         },
+        maxApprovalAmount: '999999999', // Unlimited for admin
       })
       .returning();
 
@@ -290,6 +251,80 @@ export class AuthService {
       return { message: 'No members to invite', invitations: [] };
     }
 
+    // Find or create role if roleType is provided but roleId is not
+    let finalRoleId = inviteDto.roleId;
+    if (inviteDto.roleType && !finalRoleId) {
+      // Try to find existing role with this type
+      const [existingRole] = await db
+        .select()
+        .from(roles)
+        .where(
+          and(
+            eq(roles.companyId, user.companyId),
+            eq(roles.roleType, inviteDto.roleType),
+            isNull(roles.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (existingRole) {
+        finalRoleId = existingRole.id;
+      } else {
+        // Create a new role with default permissions based on roleType
+        const rolePermissions = {
+          admin: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: true,
+          },
+          manager: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: false,
+          },
+          member: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+          viewer: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+        };
+
+        const roleNames = {
+          admin: 'Company Admin',
+          manager: 'Manager',
+          member: 'Team Member',
+          viewer: 'Viewer',
+        };
+
+        const maxAmounts = {
+          admin: '999999999',
+          manager: '500000',
+          member: '0',
+          viewer: '0',
+        };
+
+        const [newRole] = await db
+          .insert(roles)
+          .values({
+            companyId: user.companyId,
+            name: roleNames[inviteDto.roleType],
+            description: `Default ${roleNames[inviteDto.roleType]} role`,
+            roleType: inviteDto.roleType,
+            permissions: rolePermissions[inviteDto.roleType],
+            maxApprovalAmount: maxAmounts[inviteDto.roleType],
+            isSystemRole: true,
+          })
+          .returning();
+
+        finalRoleId = newRole.id;
+      }
+    }
+
     const createdInvitations = [];
     for (const email of inviteDto.memberEmails) {
       const existingUser = await db
@@ -302,26 +337,56 @@ export class AuthService {
         continue;
       }
 
+      // Check if there's already a pending invitation for this email
+      const [existingInvitation] = await db
+        .select()
+        .from(invitations)
+        .where(
+          and(
+            eq(invitations.companyId, user.companyId),
+            eq(invitations.email, email),
+            eq(invitations.status, 'pending'),
+          ),
+        )
+        .limit(1);
+
       const token = randomUUID();
       const inviteCode = generateInviteCode();
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
-      const [invitation] = await db
-        .insert(invitations)
-        .values({
-          companyId: user.companyId,
-          email,
-          invitedByUserId: userId,
-          teamId: inviteDto.teamId,
-          roleId: inviteDto.roleId,
-          permissions: inviteDto.permissions || {},
-          token,
-          inviteCode,
-          expiresAt,
-          status: 'pending',
-        })
-        .returning();
+      let invitation;
+      if (existingInvitation) {
+        // Update existing pending invitation with new details
+        [invitation] = await db
+          .update(invitations)
+          .set({
+            invitedByUserId: userId,
+            teamId: inviteDto.teamId,
+            roleId: finalRoleId,
+            token,
+            inviteCode,
+            expiresAt,
+          })
+          .where(eq(invitations.id, existingInvitation.id))
+          .returning();
+      } else {
+        // Create new invitation
+        [invitation] = await db
+          .insert(invitations)
+          .values({
+            companyId: user.companyId,
+            email,
+            invitedByUserId: userId,
+            teamId: inviteDto.teamId,
+            roleId: finalRoleId,
+            token,
+            inviteCode,
+            expiresAt,
+            status: 'pending',
+          })
+          .returning();
+      }
 
       // Send invitation email
       try {
@@ -411,53 +476,14 @@ export class AuthService {
           companyId,
           name: 'Company Admin',
           description: 'Full access to company resources',
+          roleType: 'admin',
           isSystemRole: true,
           permissions: {
-            people: {
-              view_members: true,
-              invite_members: true,
-              edit_members: true,
-              remove_members: true,
-              view_all_profiles: true,
-            },
-            teams: {
-              view_teams: true,
-              create_teams: true,
-              edit_teams: true,
-              delete_teams: true,
-              manage_team_members: true,
-              assign_team_leads: true,
-            },
-            departments: {
-              view_departments: true,
-              create_departments: true,
-              edit_departments: true,
-              delete_departments: true,
-              move_departments: true,
-              assign_team_to_department: true,
-            },
-            listings: {
-              create: true,
-              edit_own: true,
-              edit_any: true,
-              delete: true,
-              approve: true,
-              view_all: true,
-              max_approval_amount: 999999999,
-            },
-            analytics: {
-              view_own: true,
-              view_own_team: true,
-              view_department: true,
-              view_company: true,
-            },
-            settings: {
-              manage_company: true,
-              manage_roles: true,
-              manage_permissions: true,
-              view_settings: true,
-            },
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: true,
           },
+          maxApprovalAmount: '999999999', // Unlimited for admin
         })
         .returning();
 
@@ -470,8 +496,96 @@ export class AuthService {
           scopeId: companyId,
         });
 
+      // Helper function to find or create role by type
+      const findOrCreateRole = async (roleType: 'admin' | 'manager' | 'member' | 'viewer'): Promise<string> => {
+        // Try to find existing role with this type
+        const [existingRole] = await tx
+          .select()
+          .from(roles)
+          .where(
+            and(
+              eq(roles.companyId, companyId),
+              eq(roles.roleType, roleType),
+              isNull(roles.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (existingRole) {
+          return existingRole.id;
+        }
+
+        // Create a new role with default permissions based on roleType
+        const rolePermissions = {
+          admin: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: true,
+          },
+          manager: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: false,
+          },
+          member: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+          viewer: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+        };
+
+        const roleNames = {
+          admin: 'Company Admin',
+          manager: 'Manager',
+          member: 'Team Member',
+          viewer: 'Viewer',
+        };
+
+        const maxAmounts = {
+          admin: '999999999',
+          manager: '500000',
+          member: '0',
+          viewer: '0',
+        };
+
+        const [newRole] = await tx
+          .insert(roles)
+          .values({
+            companyId,
+            name: roleNames[roleType],
+            description: `Default ${roleNames[roleType]} role`,
+            roleType: roleType,
+            permissions: rolePermissions[roleType],
+            maxApprovalAmount: maxAmounts[roleType],
+            isSystemRole: true,
+          })
+          .returning();
+
+        return newRole.id;
+      };
+
       const createdInvitations = [];
       if (signupDto.memberEmails && signupDto.memberEmails.length > 0) {
+        // Create a map of email to roleType
+        const emailRoleMap = new Map<string, 'admin' | 'manager' | 'member' | 'viewer'>();
+        
+        // If memberRoles is provided, use it; otherwise use roleType for all
+        if (signupDto.memberRoles && signupDto.memberRoles.length > 0) {
+          for (const memberRole of signupDto.memberRoles) {
+            emailRoleMap.set(memberRole.email, memberRole.roleType);
+          }
+        } else if (signupDto.roleType) {
+          // Fallback to single roleType for all emails
+          for (const email of signupDto.memberEmails) {
+            emailRoleMap.set(email, signupDto.roleType);
+          }
+        }
+
         for (const email of signupDto.memberEmails) {
           const existingUserInCompany = await tx
             .select()
@@ -482,6 +596,10 @@ export class AuthService {
           if (existingUserInCompany.length > 0) {
             continue;
           }
+
+          // Get role type for this email (default to 'member' if not specified)
+          const emailRoleType = emailRoleMap.get(email) || 'member';
+          const roleId = await findOrCreateRole(emailRoleType);
 
           const token = randomUUID();
           const inviteCode = generateInviteCode();
@@ -494,6 +612,7 @@ export class AuthService {
               companyId,
               email,
               invitedByUserId: userId,
+              roleId: roleId,
               token,
               inviteCode,
               expiresAt,

@@ -1,95 +1,40 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { db } from '../database';
-import { users, roles, userRoles } from '../database/schema';
-import { eq, and, isNull } from 'drizzle-orm';
-import { RolePermissions } from '../database/schema';
-import { UpdateUserPermissionsDto } from './dto/update-user-permissions.dto';
+import { 
+  users, 
+  roles, 
+  userRoles, 
+  departments, 
+  teams, 
+  departmentHierarchy,
+  departmentTeams,
+  companies,
+  SimplifiedPermissions 
+} from '../database/schema';
+import { eq, and, isNull, or, sql, inArray } from 'drizzle-orm';
+
+export type UserRoleInfo = {
+  roleType: 'admin' | 'manager' | 'member' | 'viewer';
+  scopeType: 'company' | 'department' | 'team';
+  scopeId: string | null;
+  maxApprovalAmount: string; // decimal as string
+  permissions: SimplifiedPermissions;
+};
 
 @Injectable()
 export class PermissionsService {
   /**
-   * Get all permissions for a user (combines direct permissions and role permissions)
+   * Get user's role information (role type, scope, and max approval amount)
+   * Returns the highest privilege role if user has multiple roles
    */
-  async getUserPermissions(userId: string, companyId: string): Promise<RolePermissions> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(
-        and(
-          eq(users.id, userId),
-          eq(users.companyId, companyId),
-          isNull(users.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Start with user's direct permissions
-    const directPermissions = (user.permissions as RolePermissions) || {};
-
-    // Get user's roles and merge their permissions
+  async getUserRoleInfo(userId: string, companyId: string): Promise<UserRoleInfo | null> {
     const userRolesList = await db
       .select({
-        permissions: roles.permissions,
-      })
-      .from(userRoles)
-      .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(
-        and(
-          eq(userRoles.userId, userId),
-          isNull(roles.deletedAt),
-        ),
-      );
-
-    // Merge role permissions with direct permissions (direct permissions take precedence)
-    const mergedPermissions: RolePermissions = { ...directPermissions };
-
-    for (const userRole of userRolesList) {
-      const rolePerms = (userRole.permissions as RolePermissions) || {};
-      
-      // Merge each category
-      for (const category in rolePerms) {
-        if (!mergedPermissions[category]) {
-          mergedPermissions[category] = {};
-        }
-        Object.assign(mergedPermissions[category], rolePerms[category]);
-      }
-    }
-
-    return mergedPermissions;
-  }
-
-  /**
-   * Check if user has a specific permission
-   */
-  async hasPermission(
-    userId: string,
-    companyId: string,
-    category: keyof RolePermissions,
-    permission: string,
-  ): Promise<boolean> {
-    const permissions = await this.getUserPermissions(userId, companyId);
-    
-    // Check if user is admin (has all permissions)
-    const isAdmin = await this.isAdmin(userId, companyId);
-    if (isAdmin) return true;
-
-    const categoryPerms = permissions[category] as any;
-    if (!categoryPerms) return false;
-
-    return categoryPerms[permission] === true;
-  }
-
-  /**
-   * Check if user is admin
-   */
-  async isAdmin(userId: string, companyId: string): Promise<boolean> {
-    const userRolesList = await db
-      .select({
-        name: roles.name,
+        roleType: roles.roleType,
+        scopeType: userRoles.scopeType,
+        scopeId: userRoles.scopeId,
+        maxApprovalAmount: roles.maxApprovalAmount,
+        maxApprovalAmountOverride: userRoles.maxApprovalAmountOverride,
         permissions: roles.permissions,
       })
       .from(userRoles)
@@ -102,143 +47,309 @@ export class PermissionsService {
         ),
       );
 
-    // Check if user has admin role
-    return userRolesList.some((ur) => ur.name === 'Company Admin');
+    if (userRolesList.length === 0) {
+      return null;
+    }
+
+    // Priority: admin > manager > member > viewer
+    const rolePriority = { admin: 4, manager: 3, member: 2, viewer: 1 };
+    
+    // Get the highest privilege role
+    const highestRole = userRolesList.reduce((prev, current) => {
+      const prevPriority = rolePriority[prev.roleType] || 0;
+      const currentPriority = rolePriority[current.roleType] || 0;
+      return currentPriority > prevPriority ? current : prev;
+    });
+
+    // Use override if available, otherwise use role's default
+    const maxApprovalAmount = highestRole.maxApprovalAmountOverride 
+      ? highestRole.maxApprovalAmountOverride 
+      : highestRole.maxApprovalAmount;
+
+    return {
+      roleType: highestRole.roleType,
+      scopeType: highestRole.scopeType,
+      scopeId: highestRole.scopeId,
+      maxApprovalAmount: maxApprovalAmount || '0',
+      permissions: (highestRole.permissions as SimplifiedPermissions) || {},
+    };
   }
 
   /**
-   * Update user's direct permissions
+   * Get simplified permissions for a user based on their role
    */
-  async updateUserPermissions(
-    userId: string,
-    companyId: string,
-    updateDto: UpdateUserPermissionsDto,
-  ) {
-    // Verify user belongs to company
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(
-        and(
-          eq(users.id, userId),
-          eq(users.companyId, companyId),
-          isNull(users.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Merge with existing permissions (don't overwrite, merge)
-    const existingPermissions = (user.permissions as RolePermissions) || {};
-    const newPermissions = updateDto.permissions || {};
-
-    const mergedPermissions: RolePermissions = {
-      ...existingPermissions,
-    };
-
-    // Merge each category
-    for (const category in newPermissions) {
-      mergedPermissions[category] = {
-        ...(existingPermissions[category] || {}),
-        ...(newPermissions[category] || {}),
+  async getUserPermissions(userId: string, companyId: string): Promise<SimplifiedPermissions> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) {
+      // Default to no permissions if no role assigned
+      return {
+        canManageStructure: false,
+        canApproveListings: false,
+        canAccessSettings: false,
       };
     }
 
-    // Update user permissions
-    await db
-      .update(users)
-      .set({
-        permissions: mergedPermissions,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, userId));
+    return roleInfo.permissions;
+  }
+
+  /**
+   * Check if user is admin
+   */
+  async isAdmin(userId: string, companyId: string): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    return roleInfo?.roleType === 'admin';
+  }
+
+  /**
+   * Check if user can manage structure (create/edit teams, departments, add members)
+   */
+  async canManageStructure(
+    userId: string,
+    companyId: string,
+    targetScopeType?: 'company' | 'department' | 'team',
+    targetScopeId?: string,
+  ): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) return false;
+    
+    // Admin can manage everything
+    if (roleInfo.roleType === 'admin') return true;
+    
+    // Manager can manage structure
+    if (roleInfo.roleType === 'manager' && roleInfo.permissions.canManageStructure) {
+      // If target scope is specified, check if user's scope includes it
+      if (targetScopeType && targetScopeId) {
+        return this.isInScopeInternal(roleInfo, targetScopeType, targetScopeId, companyId);
+      }
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if user can approve listings (with amount limit)
+   */
+  async canApproveListing(
+    userId: string,
+    companyId: string,
+    listingAmount: number | string,
+    targetScopeType?: 'company' | 'department' | 'team',
+    targetScopeId?: string,
+  ): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) return false;
+    
+    // Admin can approve any amount
+    if (roleInfo.roleType === 'admin') return true;
+    
+    // Check if role allows approval
+    if (!roleInfo.permissions.canApproveListings) return false;
+    
+    // Check amount limit
+    const maxAmount = parseFloat(roleInfo.maxApprovalAmount || '0');
+    const listingValue = typeof listingAmount === 'string' ? parseFloat(listingAmount) : listingAmount;
+    
+    if (listingValue > maxAmount) return false;
+    
+    // If target scope is specified, check if user's scope includes it
+    if (targetScopeType && targetScopeId) {
+      return this.isInScopeInternal(roleInfo, targetScopeType, targetScopeId, companyId);
+    }
+    
+    return true;
+  }
+
+  /**
+   * Check if user can access settings
+   */
+  async canAccessSettings(userId: string, companyId: string): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) return false;
+    
+    // Admin can always access settings
+    if (roleInfo.roleType === 'admin') return true;
+    
+    return roleInfo.permissions.canAccessSettings === true;
+  }
+
+  /**
+   * Check if user can access a target scope (company/department/team)
+   * Returns true if user's scope includes the target scope
+   */
+  async isInScope(
+    userId: string,
+    companyId: string,
+    targetScopeType: 'company' | 'department' | 'team',
+    targetScopeId: string,
+  ): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) return false;
+    
+    return this.isInScopeInternal(roleInfo, targetScopeType, targetScopeId, companyId);
+  }
+
+  /**
+   * Internal helper to check scope inclusion
+   */
+  private async isInScopeInternal(
+    roleInfo: UserRoleInfo,
+    targetScopeType: 'company' | 'department' | 'team',
+    targetScopeId: string,
+    companyId: string,
+  ): Promise<boolean> {
+    // Admin with company scope can access everything
+    if (roleInfo.roleType === 'admin' && roleInfo.scopeType === 'company') {
+      return true;
+    }
+
+    // If user's scope is company, they can access everything
+    if (roleInfo.scopeType === 'company') {
+      return true;
+    }
+
+    // If user's scope matches target scope exactly
+    if (roleInfo.scopeType === targetScopeType && roleInfo.scopeId === targetScopeId) {
+      return true;
+    }
+
+    // Department scope can access its children and teams
+    if (roleInfo.scopeType === 'department' && roleInfo.scopeId) {
+      if (targetScopeType === 'department') {
+        // Check if target department is a descendant or the same department
+        if (roleInfo.scopeId === targetScopeId) return true;
+        
+        const [isDescendant] = await db
+          .select()
+          .from(departmentHierarchy)
+          .where(
+            and(
+              eq(departmentHierarchy.ancestorId, roleInfo.scopeId),
+              eq(departmentHierarchy.descendantId, targetScopeId),
+            ),
+          )
+          .limit(1);
+        
+        if (isDescendant) return true;
+      }
+      
+      if (targetScopeType === 'team') {
+        // Get all descendant department IDs including self
+        const descendantDepts = await db
+          .select({ id: departmentHierarchy.descendantId })
+          .from(departmentHierarchy)
+          .where(eq(departmentHierarchy.ancestorId, roleInfo.scopeId));
+        
+        const deptIds = [roleInfo.scopeId, ...descendantDepts.map(d => d.id)];
+        
+        // Check if team belongs to any of these departments
+        const [teamInDept] = await db
+          .select()
+          .from(departmentTeams)
+          .where(
+            and(
+              eq(departmentTeams.teamId, targetScopeId),
+              inArray(departmentTeams.departmentId, deptIds),
+            ),
+          )
+          .limit(1);
+        
+        if (teamInDept) return true;
+      }
+    }
+
+    // Team scope can only access its own team
+    if (roleInfo.scopeType === 'team' && roleInfo.scopeId === targetScopeId) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get user's effective scope (what they can manage)
+   */
+  async getEffectiveScope(userId: string, companyId: string): Promise<{
+    scopeType: 'company' | 'department' | 'team';
+    scopeId: string | null;
+    scopeName?: string;
+  }> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) {
+      return { scopeType: 'team', scopeId: null };
+    }
+
+    // Get scope name if available
+    let scopeName: string | undefined;
+    
+    if (roleInfo.scopeType === 'company') {
+      const [company] = await db
+        .select({ name: companies.name })
+        .from(companies)
+        .where(eq(companies.id, companyId))
+        .limit(1);
+      scopeName = company?.name;
+    } else if (roleInfo.scopeType === 'department' && roleInfo.scopeId) {
+      const [dept] = await db
+        .select({ name: departments.name })
+        .from(departments)
+        .where(eq(departments.id, roleInfo.scopeId))
+        .limit(1);
+      scopeName = dept?.name;
+    } else if (roleInfo.scopeType === 'team' && roleInfo.scopeId) {
+      const [team] = await db
+        .select({ name: teams.name })
+        .from(teams)
+        .where(eq(teams.id, roleInfo.scopeId))
+        .limit(1);
+      scopeName = team?.name;
+    }
 
     return {
-      ...user,
-      permissions: mergedPermissions,
+      scopeType: roleInfo.scopeType,
+      scopeId: roleInfo.scopeId,
+      scopeName,
     };
   }
 
   /**
-   * Get all available permission categories and their permissions
+   * Legacy method for backward compatibility - maps old permission checks to new system
+   * @deprecated Use specific methods like canManageStructure, canApproveListing, etc.
    */
-  getAvailablePermissions(): {
-    category: string;
-    label: string;
-    permissions: { key: string; label: string; description: string }[];
-  }[] {
-    return [
-      {
-        category: 'people',
-        label: 'People & Members',
-        permissions: [
-          { key: 'view_members', label: 'View Members', description: 'View company members list' },
-          { key: 'invite_members', label: 'Invite Members', description: 'Send invitations to new members' },
-          { key: 'edit_members', label: 'Edit Members', description: 'Edit member profiles and information' },
-          { key: 'remove_members', label: 'Remove Members', description: 'Remove members from company' },
-          { key: 'view_all_profiles', label: 'View All Profiles', description: 'View detailed profiles of all members' },
-        ],
-      },
-      {
-        category: 'teams',
-        label: 'Teams',
-        permissions: [
-          { key: 'view_teams', label: 'View Teams', description: 'View teams list and details' },
-          { key: 'create_teams', label: 'Create Teams', description: 'Create new teams' },
-          { key: 'edit_teams', label: 'Edit Teams', description: 'Edit team information' },
-          { key: 'delete_teams', label: 'Delete Teams', description: 'Delete teams' },
-          { key: 'manage_team_members', label: 'Manage Team Members', description: 'Add/remove members from teams' },
-          { key: 'assign_team_leads', label: 'Assign Team Leads', description: 'Assign team leaders' },
-        ],
-      },
-      {
-        category: 'departments',
-        label: 'Departments',
-        permissions: [
-          { key: 'view_departments', label: 'View Departments', description: 'View department structure' },
-          { key: 'create_departments', label: 'Create Departments', description: 'Create new departments' },
-          { key: 'edit_departments', label: 'Edit Departments', description: 'Edit department information' },
-          { key: 'delete_departments', label: 'Delete Departments', description: 'Delete departments' },
-          { key: 'move_departments', label: 'Move Departments', description: 'Reorganize department hierarchy' },
-          { key: 'assign_team_to_department', label: 'Assign Teams', description: 'Assign teams to departments' },
-        ],
-      },
-      {
-        category: 'listings',
-        label: 'Listings',
-        permissions: [
-          { key: 'create', label: 'Create Listings', description: 'Create new material listings' },
-          { key: 'edit_own', label: 'Edit Own Listings', description: 'Edit listings you created' },
-          { key: 'edit_any', label: 'Edit Any Listings', description: 'Edit any company listings' },
-          { key: 'delete', label: 'Delete Listings', description: 'Delete listings' },
-          { key: 'approve', label: 'Approve Listings', description: 'Approve pending listings' },
-          { key: 'view_all', label: 'View All Listings', description: 'View all company listings' },
-        ],
-      },
-      {
-        category: 'analytics',
-        label: 'Analytics',
-        permissions: [
-          { key: 'view_own', label: 'View Own Analytics', description: 'View your personal analytics' },
-          { key: 'view_own_team', label: 'View Team Analytics', description: 'View your team analytics' },
-          { key: 'view_department', label: 'View Department Analytics', description: 'View department analytics' },
-          { key: 'view_company', label: 'View Company Analytics', description: 'View company-wide analytics' },
-        ],
-      },
-      {
-        category: 'settings',
-        label: 'Settings',
-        permissions: [
-          { key: 'view_settings', label: 'View Settings', description: 'View company settings' },
-          { key: 'manage_company', label: 'Manage Company', description: 'Edit company information' },
-          { key: 'manage_roles', label: 'Manage Roles', description: 'Create and edit roles' },
-          { key: 'manage_permissions', label: 'Manage Permissions', description: 'Manage user permissions' },
-        ],
-      },
-    ];
+  async hasPermission(
+    userId: string,
+    companyId: string,
+    category: string,
+    permission: string,
+  ): Promise<boolean> {
+    const roleInfo = await this.getUserRoleInfo(userId, companyId);
+    
+    if (!roleInfo) return false;
+    
+    // Admin has all permissions
+    if (roleInfo.roleType === 'admin') return true;
+    
+    // Map old permission checks to new system
+    if (category === 'settings') {
+      return this.canAccessSettings(userId, companyId);
+    }
+    
+    if (category === 'listings' && permission === 'approve') {
+      // This is a simplified check - actual amount should be checked with canApproveListing
+      return roleInfo.permissions.canApproveListings === true;
+    }
+    
+    if (['teams', 'departments', 'people'].includes(category)) {
+      return this.canManageStructure(userId, companyId);
+    }
+    
+    // For other permissions, return true if user has any role (member can view)
+    return roleInfo.roleType !== 'viewer';
   }
 }
-

@@ -1,9 +1,8 @@
-import { Controller, Get, Param, Put, Body, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Query } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { UpdateUserPermissionsDto } from './dto/update-user-permissions.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -35,25 +34,26 @@ export class UsersController {
   @Get(':id')
   async getUserById(@Param('id') id: string, @CurrentUser() user: any) {
     const userData = await this.userService.getUserById(id, user.companyId);
+    const roleInfo = await this.permissionsService.getUserRoleInfo(id, user.companyId);
     const permissions = await this.permissionsService.getUserPermissions(id, user.companyId);
     return {
       ...userData,
+      roleInfo,
       permissions,
     };
   }
 
   @Get(':id/permissions')
   async getUserPermissions(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.permissionsService.getUserPermissions(id, user.companyId);
+    const roleInfo = await this.permissionsService.getUserRoleInfo(id, user.companyId);
+    const permissions = await this.permissionsService.getUserPermissions(id, user.companyId);
+    return {
+      roleInfo,
+      permissions,
+    };
   }
 
-  @Put(':id/permissions')
-  async updateUserPermissions(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateUserPermissionsDto,
-    @CurrentUser() user: any,
-  ) {
-    return this.permissionsService.updateUserPermissions(id, user.companyId, updateDto);
-  }
+  // Note: updateUserPermissions removed - users now get permissions through roles only
+  // Use role assignment endpoints instead
 }
 

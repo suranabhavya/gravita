@@ -16,11 +16,90 @@ export class InvitationController {
   @Post()
   @UseGuards(JwtAuthGuard)
   async inviteMembers(@Body() inviteMembersDto: InviteMembersDto, @CurrentUser() user: any) {
+    // If roleType is provided but not roleId, find or create the role
+    let roleId = inviteMembersDto.roleId;
+    
+    if (inviteMembersDto.roleType && !roleId) {
+      const { db } = await import('../database');
+      const { roles } = await import('../database/schema');
+      const { eq, and, isNull } = await import('drizzle-orm');
+      
+      // Try to find existing role with this type
+      const [existingRole] = await db
+        .select()
+        .from(roles)
+        .where(
+          and(
+            eq(roles.companyId, user.companyId),
+            eq(roles.roleType, inviteMembersDto.roleType),
+            isNull(roles.deletedAt),
+          ),
+        )
+        .limit(1);
+      
+      if (existingRole) {
+        roleId = existingRole.id;
+      } else {
+        // Create a new role with default permissions based on roleType
+        const rolePermissions = {
+          admin: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: true,
+          },
+          manager: {
+            canManageStructure: true,
+            canApproveListings: true,
+            canAccessSettings: false,
+          },
+          member: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+          viewer: {
+            canManageStructure: false,
+            canApproveListings: false,
+            canAccessSettings: false,
+          },
+        };
+        
+        const roleNames = {
+          admin: 'Company Admin',
+          manager: 'Manager',
+          member: 'Team Member',
+          viewer: 'Viewer',
+        };
+        
+        const maxAmounts = {
+          admin: '999999999',
+          manager: '500000',
+          member: '0',
+          viewer: '0',
+        };
+        
+        const [newRole] = await db
+          .insert(roles)
+          .values({
+            companyId: user.companyId,
+            name: roleNames[inviteMembersDto.roleType],
+            description: `Default ${roleNames[inviteMembersDto.roleType]} role`,
+            roleType: inviteMembersDto.roleType,
+            permissions: rolePermissions[inviteMembersDto.roleType],
+            maxApprovalAmount: maxAmounts[inviteMembersDto.roleType],
+            isSystemRole: true,
+          })
+          .returning();
+        
+        roleId = newRole.id;
+      }
+    }
+    
     // Convert InviteMembersDto to SignupStep3Dto format
     const signupStep3Dto = {
       memberEmails: inviteMembersDto.emails,
       teamId: inviteMembersDto.teamId,
-      roleId: inviteMembersDto.roleId,
+      roleId: roleId,
     };
 
     return this.authService.signupStep3(user.userId, signupStep3Dto);

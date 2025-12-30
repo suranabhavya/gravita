@@ -1,4 +1,13 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsPhoneNumber, IsEnum, IsArray } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsPhoneNumber, IsEnum, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class MemberRoleDto {
+  @IsEmail()
+  email: string;
+
+  @IsEnum(['admin', 'manager', 'member', 'viewer'])
+  roleType: 'admin' | 'manager' | 'member' | 'viewer';
+}
 
 export class CompleteSignupDto {
   @IsString()
@@ -33,5 +42,15 @@ export class CompleteSignupDto {
   @IsArray()
   @IsEmail({}, { each: true })
   memberEmails?: string[];
+
+  @IsOptional()
+  @IsEnum(['admin', 'manager', 'member', 'viewer'])
+  roleType?: 'admin' | 'manager' | 'member' | 'viewer';
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MemberRoleDto)
+  memberRoles?: MemberRoleDto[];
 }
 

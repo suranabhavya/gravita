@@ -11,8 +11,6 @@ import '../../services/department_service.dart';
 import '../../services/invitation_service.dart';
 import '../../widgets/create_team_bottom_sheet.dart';
 import '../../widgets/create_department_bottom_sheet.dart';
-import '../../widgets/permissions_selector.dart';
-import '../../models/permissions_model.dart';
 import 'people_tab.dart';
 import 'teams_tab.dart';
 import 'structure_tab.dart';
@@ -333,166 +331,352 @@ class _CompanyPageState extends State<CompanyPage> with SingleTickerProviderStat
 
   Widget _buildInviteMemberSheet() {
     final emailController = TextEditingController();
-    final emails = <String>[]; // This list persists across rebuilds
-    UserPermissions? selectedPermissions;
+    String? selectedRoleType; // 'admin', 'manager', 'member', 'viewer'
+    String? selectedTeamId;
 
     return StatefulBuilder(
       builder: (context, setState) {
-        // Helper function to add email
-        void addEmail(String email) {
-          final trimmedEmail = email.trim();
-          if (trimmedEmail.isNotEmpty && 
-              trimmedEmail.contains('@') && 
-              !emails.contains(trimmedEmail)) {
-            setState(() {
-              emails.add(trimmedEmail);
-              emailController.clear();
-            });
-          }
-        }
+        // Role options with descriptions
+        final roleOptions = [
+          {
+            'value': 'admin',
+            'label': 'Admin',
+            'description': 'Full control',
+          },
+          {
+            'value': 'manager',
+            'label': 'Manager',
+            'description': 'Manage & approve',
+          },
+          {
+            'value': 'member',
+            'label': 'Member',
+            'description': 'Create listings',
+          },
+          {
+            'value': 'viewer',
+            'label': 'Viewer',
+            'description': 'Read-only',
+          },
+        ];
 
         return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-        decoration: const BoxDecoration(
-          color: Color(0xFF0d2818),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
+          height: MediaQuery.of(context).size.height * 0.65,
+          decoration: const BoxDecoration(
+            color: Color(0xFF0d2818),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: [
-                  Text(
-                    'Invite Member',
-                    style: GoogleFonts.inter(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView(
+              Padding(
                 padding: const EdgeInsets.all(24),
-                children: [
-                  Text(
-                    'Email addresses',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Invite New Member',
+                      style: GoogleFonts.inter(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  ...emails.map((email) => Container(
-                        margin: const EdgeInsets.only(bottom: 8),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  children: [
+                    // Email Address Field
+                    Text(
+                      'Email Address *',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: TextField(
+                        controller: emailController,
+                        style: GoogleFonts.inter(color: Colors.white),
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          hintText: 'sarah@example.com',
+                          hintStyle: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          border: InputBorder.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    // Assign Role Field
+                    Text(
+                      'Assign Role?',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...roleOptions.map((role) {
+                      final isSelected = selectedRoleType == role['value'];
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            selectedRoleType = role['value'] as String;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.white.withValues(alpha: 0.5)
+                                  : Colors.white.withValues(alpha: 0.1),
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                                color: isSelected
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.5),
+                                size: 24,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      role['label'] as String,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '(${role['description'] as String})',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: Colors.white.withValues(alpha: 0.6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 24),
+                    
+                    // Assign to Team Field
+                    Text(
+                      'Assign to Team',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _teams.isEmpty 
+                            ? Colors.black.withValues(alpha: 0.2)
+                            : Colors.black.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      child: DropdownButton<String>(
+                        value: selectedTeamId,
+                        isExpanded: true,
+                        underline: const SizedBox(),
+                        dropdownColor: const Color(0xFF1a4d2e),
+                        style: GoogleFonts.inter(
+                          color: _teams.isEmpty 
+                              ? Colors.white.withValues(alpha: 0.5)
+                              : Colors.white,
+                          fontSize: 14,
+                        ),
+                        hint: Text(
+                          _teams.isEmpty 
+                              ? 'No teams yet'
+                              : 'Select a team (optional)',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        items: _teams.isEmpty
+                            ? [
+                                const DropdownMenuItem<String>(
+                                  value: null,
+                                  enabled: false,
+                                  child: Text('Create teams after inviting'),
+                                ),
+                              ]
+                            : [
+                                const DropdownMenuItem<String>(
+                                  value: null,
+                                  child: Text('No team (optional)'),
+                                ),
+                                ..._teams.map((team) {
+                                  return DropdownMenuItem<String>(
+                                    value: team.id,
+                                    child: Text(team.name),
+                                  );
+                                }),
+                              ],
+                        onChanged: _teams.isEmpty 
+                            ? null
+                            : (value) {
+                                setState(() {
+                                  selectedTeamId = value;
+                                });
+                              },
+                      ),
+                    ),
+                    if (_teams.isEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.3),
+                          color: Colors.white.withValues(alpha: 0.05),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
                           children: [
+                            Icon(
+                              Icons.lightbulb_outline,
+                              color: Colors.white.withValues(alpha: 0.7),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                email,
-                                style: GoogleFonts.inter(color: Colors.white),
+                                'Tip: You can organize members into teams after they join',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                ),
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 20, color: Colors.white70),
-                              onPressed: () {
-                                setState(() => emails.remove(email));
-                              },
                             ),
                           ],
                         ),
-                      )),
-                  TextField(
-                    controller: emailController,
-                    style: GoogleFonts.inter(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Enter email address',
-                      hintStyle: GoogleFonts.inter(
-                        color: Colors.white.withValues(alpha: 0.5),
                       ),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.add, color: Colors.white),
-                        onPressed: () {
-                          addEmail(emailController.text);
-                        },
+                    ],
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.inter(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
-                    onSubmitted: (value) {
-                      addEmail(value);
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  PermissionsSelector(
-                    onPermissionsChanged: (permissions) {
-                      selectedPermissions = permissions;
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: ElevatedButton(
-                onPressed: emails.isEmpty
-                    ? null
-                    : () async {
-                        try {
-                          await _invitationService.inviteMembers(
-                            emails: emails,
-                            permissions: selectedPermissions,
-                          );
-                          if (mounted) {
-                            Navigator.of(context).pop();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Invitations sent')),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to send invitations: $e')),
-                            );
-                          }
-                        }
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  minimumSize: const Size(double.infinity, 0),
-                ),
-                child: Text(
-                  'Send Invitations',
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFF0d2818),
-                    fontWeight: FontWeight.w700,
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: emailController.text.trim().isEmpty || selectedRoleType == null
+                            ? null
+                            : () async {
+                                try {
+                                  await _invitationService.inviteMembers(
+                                    email: emailController.text.trim(),
+                                    teamId: selectedTeamId,
+                                    roleType: selectedRoleType, // Backend will find/create role by type
+                                  );
+                                  if (mounted) {
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Invitation sent')),
+                                    );
+                                    _loadData(); // Refresh data
+                                  }
+                                } catch (e) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Failed to send invitation: $e')),
+                                    );
+                                  }
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          disabledBackgroundColor: Colors.white.withValues(alpha: 0.3),
+                        ),
+                        child: Text(
+                          'Send Invite',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFF0d2818),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+            ],
           ),
         );
       },

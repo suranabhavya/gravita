@@ -82,6 +82,8 @@ class AuthService {
     String? industry,
     String? size,
     List<String>? memberEmails,
+    String? roleType, // 'admin', 'manager', 'member', 'viewer' (deprecated - use memberRoles)
+    List<Map<String, dynamic>>? memberRoles, // [{email: string, roleType: string}]
   }) async {
     final response = await ApiService.post('/auth/signup/complete', {
       'name': name,
@@ -93,6 +95,8 @@ class AuthService {
       if (industry != null && industry.isNotEmpty) 'industry': industry,
       if (size != null && size.isNotEmpty) 'size': size,
       if (memberEmails != null && memberEmails.isNotEmpty) 'memberEmails': memberEmails,
+      if (roleType != null) 'roleType': roleType, // Fallback for backward compatibility
+      if (memberRoles != null && memberRoles.isNotEmpty) 'memberRoles': memberRoles,
     });
 
     if (response.statusCode == 201 || response.statusCode == 200) {

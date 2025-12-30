@@ -38,6 +38,7 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
   // Step 3: Invite Members
   final _step3FormKey = GlobalKey<FormState>();
   final List<TextEditingController> _emailControllers = [TextEditingController()];
+  final Map<int, String?> _emailRoleTypes = {}; // Map of email index to role type
 
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
@@ -61,6 +62,11 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
     ).animate(
       CurvedAnimation(parent: _controller, curve: const Interval(0.2, 1.0, curve: Curves.easeOutCubic)),
     );
+
+    // Add listener to first email controller
+    _emailControllers[0].addListener(() {
+      setState(() {}); // Rebuild when text changes to show/hide role selection
+    });
 
     _controller.forward();
   }
@@ -110,13 +116,11 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
   }
 
   Future<void> _handleStep3() async {
-    final emails = _emailControllers
-        .map((c) => c.text.trim())
-        .where((email) => email.isNotEmpty)
-        .toList();
-
-    if (emails.isNotEmpty) {
-      for (final email in emails) {
+    // Collect emails with their indices
+    final emailsWithRoles = <Map<String, dynamic>>[];
+    for (int i = 0; i < _emailControllers.length; i++) {
+      final email = _emailControllers[i].text.trim();
+      if (email.isNotEmpty) {
         if (!email.contains('@')) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -127,8 +131,31 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
           );
           return;
         }
+        
+        // Check if role is selected for this email
+        if (_emailRoleTypes[i] == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Please select a role for ${email}'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        
+        emailsWithRoles.add({
+          'email': email,
+          'roleType': _emailRoleTypes[i],
+        });
       }
     }
+
+    final emails = emailsWithRoles.map((e) => e['email'] as String).toList();
+    final memberRoles = emailsWithRoles.map((e) => {
+      'email': e['email'] as String,
+      'roleType': e['roleType'] as String,
+    }).toList();
 
     setState(() => _isLoading = true);
 
@@ -143,6 +170,7 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
         industry: _industryController.text.trim().isEmpty ? null : _industryController.text.trim(),
         size: _sizeController.text.trim().isEmpty ? null : _sizeController.text.trim(),
         memberEmails: emails.isEmpty ? null : emails,
+        memberRoles: emails.isEmpty ? null : memberRoles,
       );
 
       if (mounted) {
@@ -172,7 +200,13 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
 
   void _addEmailField() {
     setState(() {
-      _emailControllers.add(TextEditingController());
+      final newController = TextEditingController();
+      newController.addListener(() {
+        if (mounted) {
+          setState(() {}); // Rebuild when text changes to show/hide role selection
+        }
+      });
+      _emailControllers.add(newController);
     });
   }
 
@@ -439,6 +473,30 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
   }
 
   Widget _buildStep3() {
+    // Role options with descriptions
+    final roleOptions = [
+      {
+        'value': 'admin',
+        'label': 'Admin',
+        'description': 'Full control',
+      },
+      {
+        'value': 'manager',
+        'label': 'Manager',
+        'description': 'Manage & approve',
+      },
+      {
+        'value': 'member',
+        'label': 'Member',
+        'description': 'Create listings',
+      },
+      {
+        'value': 'viewer',
+        'label': 'Viewer',
+        'description': 'Read-only',
+      },
+    ];
+
     return Form(
       key: _step3FormKey,
       child: Column(
@@ -456,38 +514,117 @@ class _SignupPageState extends State<SignupPage> with SingleTickerProviderStateM
           const SizedBox(height: 32),
           ...List.generate(_emailControllers.length, (index) {
             return Padding(
-              padding: EdgeInsets.only(bottom: index < _emailControllers.length - 1 ? 16 : 0),
-              child: Row(
+              padding: EdgeInsets.only(bottom: index < _emailControllers.length - 1 ? 24 : 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: GlassTextField(
-                      hintText: 'team.member@example.com',
-                      controller: _emailControllers[index],
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                  ),
-                  if (_emailControllers.length > 1)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: GlassContainer(
-                        width: 48,
-                        height: 48,
-                        isCircular: true,
-                        padding: EdgeInsets.zero,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _removeEmailField(index),
-                            borderRadius: BorderRadius.circular(24),
-                            child: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.white,
-                              size: 24,
+                  // Email Field with Remove Button
+                  Row(
+                    children: [
+                      Expanded(
+                        child: GlassTextField(
+                          hintText: 'team.member@example.com',
+                          controller: _emailControllers[index],
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                      ),
+                      if (_emailControllers.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: GlassContainer(
+                            width: 48,
+                            height: 48,
+                            isCircular: true,
+                            padding: EdgeInsets.zero,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _removeEmailField(index),
+                                borderRadius: BorderRadius.circular(24),
+                                child: const Icon(
+                                  Icons.remove_circle_outline,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                    ],
+                  ),
+                  // Role Selection for this email (always visible)
+                  const SizedBox(height: 16),
+                  Text(
+                    'Assign Role?',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.8),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...roleOptions.map((role) {
+                    final isSelected = _emailRoleTypes[index] == role['value'];
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _emailRoleTypes[index] = role['value'] as String;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? Colors.white.withValues(alpha: 0.4)
+                                : Colors.white.withValues(alpha: 0.1),
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.5),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    role['label'] as String,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    '(${role['description'] as String})',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: Colors.white.withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
                 ],
               ),
             );

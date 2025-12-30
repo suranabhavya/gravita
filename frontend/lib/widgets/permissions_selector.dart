@@ -23,7 +23,14 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
   @override
   void initState() {
     super.initState();
-    _permissions = widget.initialPermissions ?? UserPermissions();
+    _permissions = widget.initialPermissions ?? UserPermissions(
+      people: PeoplePermissions(),
+      teams: TeamsPermissions(),
+      departments: DepartmentsPermissions(),
+      listings: ListingsPermissions(),
+      analytics: AnalyticsPermissions(),
+      settings: SettingsPermissions(),
+    );
   }
 
   void _updatePermissions() {
@@ -99,14 +106,15 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
           ],
           (key, value) {
             setState(() {
+              final currentTeams = _permissions.teams ?? TeamsPermissions();
               _permissions = _permissions.copyWith(
                 teams: TeamsPermissions(
-                  viewTeams: key == 'view_teams' ? value : _permissions.teams?.viewTeams,
-                  createTeams: key == 'create_teams' ? value : _permissions.teams?.createTeams,
-                  editTeams: key == 'edit_teams' ? value : _permissions.teams?.editTeams,
-                  deleteTeams: key == 'delete_teams' ? value : _permissions.teams?.deleteTeams,
-                  manageTeamMembers: key == 'manage_team_members' ? value : _permissions.teams?.manageTeamMembers,
-                  assignTeamLeads: key == 'assign_team_leads' ? value : _permissions.teams?.assignTeamLeads,
+                  viewTeams: key == 'view_teams' ? value : (currentTeams.viewTeams ?? false),
+                  createTeams: key == 'create_teams' ? value : (currentTeams.createTeams ?? false),
+                  editTeams: key == 'edit_teams' ? value : (currentTeams.editTeams ?? false),
+                  deleteTeams: key == 'delete_teams' ? value : (currentTeams.deleteTeams ?? false),
+                  manageTeamMembers: key == 'manage_team_members' ? value : (currentTeams.manageTeamMembers ?? false),
+                  assignTeamLeads: key == 'assign_team_leads' ? value : (currentTeams.assignTeamLeads ?? false),
                 ),
               );
             });
@@ -145,14 +153,15 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
           ],
           (key, value) {
             setState(() {
+              final currentDepts = _permissions.departments ?? DepartmentsPermissions();
               _permissions = _permissions.copyWith(
                 departments: DepartmentsPermissions(
-                  viewDepartments: key == 'view_departments' ? value : _permissions.departments?.viewDepartments,
-                  createDepartments: key == 'create_departments' ? value : _permissions.departments?.createDepartments,
-                  editDepartments: key == 'edit_departments' ? value : _permissions.departments?.editDepartments,
-                  deleteDepartments: key == 'delete_departments' ? value : _permissions.departments?.deleteDepartments,
-                  moveDepartments: key == 'move_departments' ? value : _permissions.departments?.moveDepartments,
-                  assignTeamToDepartment: key == 'assign_team_to_department' ? value : _permissions.departments?.assignTeamToDepartment,
+                  viewDepartments: key == 'view_departments' ? value : (currentDepts.viewDepartments ?? false),
+                  createDepartments: key == 'create_departments' ? value : (currentDepts.createDepartments ?? false),
+                  editDepartments: key == 'edit_departments' ? value : (currentDepts.editDepartments ?? false),
+                  deleteDepartments: key == 'delete_departments' ? value : (currentDepts.deleteDepartments ?? false),
+                  moveDepartments: key == 'move_departments' ? value : (currentDepts.moveDepartments ?? false),
+                  assignTeamToDepartment: key == 'assign_team_to_department' ? value : (currentDepts.assignTeamToDepartment ?? false),
                 ),
               );
             });
@@ -191,14 +200,15 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
           ],
           (key, value) {
             setState(() {
+              final currentListings = _permissions.listings ?? ListingsPermissions();
               _permissions = _permissions.copyWith(
                 listings: ListingsPermissions(
-                  create: key == 'create' ? value : _permissions.listings?.create,
-                  editOwn: key == 'edit_own' ? value : _permissions.listings?.editOwn,
-                  editAny: key == 'edit_any' ? value : _permissions.listings?.editAny,
-                  delete: key == 'delete' ? value : _permissions.listings?.delete,
-                  approve: key == 'approve' ? value : _permissions.listings?.approve,
-                  viewAll: key == 'view_all' ? value : _permissions.listings?.viewAll,
+                  create: key == 'create' ? value : (currentListings.create ?? false),
+                  editOwn: key == 'edit_own' ? value : (currentListings.editOwn ?? false),
+                  editAny: key == 'edit_any' ? value : (currentListings.editAny ?? false),
+                  delete: key == 'delete' ? value : (currentListings.delete ?? false),
+                  approve: key == 'approve' ? value : (currentListings.approve ?? false),
+                  viewAll: key == 'view_all' ? value : (currentListings.viewAll ?? false),
                 ),
               );
             });
@@ -235,12 +245,13 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
           ],
           (key, value) {
             setState(() {
+              final currentAnalytics = _permissions.analytics ?? AnalyticsPermissions();
               _permissions = _permissions.copyWith(
                 analytics: AnalyticsPermissions(
-                  viewOwn: key == 'view_own' ? value : _permissions.analytics?.viewOwn,
-                  viewOwnTeam: key == 'view_own_team' ? value : _permissions.analytics?.viewOwnTeam,
-                  viewDepartment: key == 'view_department' ? value : _permissions.analytics?.viewDepartment,
-                  viewCompany: key == 'view_company' ? value : _permissions.analytics?.viewCompany,
+                  viewOwn: key == 'view_own' ? value : (currentAnalytics.viewOwn ?? false),
+                  viewOwnTeam: key == 'view_own_team' ? value : (currentAnalytics.viewOwnTeam ?? false),
+                  viewDepartment: key == 'view_department' ? value : (currentAnalytics.viewDepartment ?? false),
+                  viewCompany: key == 'view_company' ? value : (currentAnalytics.viewCompany ?? false),
                 ),
               );
             });
@@ -273,12 +284,13 @@ class _PermissionsSelectorState extends State<PermissionsSelector> {
           ],
           (key, value) {
             setState(() {
+              final currentSettings = _permissions.settings ?? SettingsPermissions();
               _permissions = _permissions.copyWith(
                 settings: SettingsPermissions(
-                  viewSettings: key == 'view_settings' ? value : _permissions.settings?.viewSettings,
-                  manageCompany: key == 'manage_company' ? value : _permissions.settings?.manageCompany,
-                  manageRoles: key == 'manage_roles' ? value : _permissions.settings?.manageRoles,
-                  managePermissions: key == 'manage_permissions' ? value : _permissions.settings?.managePermissions,
+                  viewSettings: key == 'view_settings' ? value : (currentSettings.viewSettings ?? false),
+                  manageCompany: key == 'manage_company' ? value : (currentSettings.manageCompany ?? false),
+                  manageRoles: key == 'manage_roles' ? value : (currentSettings.manageRoles ?? false),
+                  managePermissions: key == 'manage_permissions' ? value : (currentSettings.managePermissions ?? false),
                 ),
               );
             });

@@ -34,6 +34,7 @@ export const listingStatusEnum = pgEnum('listing_status', [
   'cancelled',
 ]);
 export const scopeTypeEnum = pgEnum('scope_type', ['company', 'department', 'team']);
+export const roleTypeEnum = pgEnum('role_type', ['admin', 'manager', 'member', 'viewer']);
 export const approvalActionEnum = pgEnum('approval_action', [
   'approved',
   'rejected',
@@ -56,58 +57,18 @@ export type CompanySettings = {
   auto_escalate_hours: number;
 };
 
-export type RolePermissions = {
-  // People & Invitations
-  people?: {
-    view_members?: boolean;
-    invite_members?: boolean;
-    edit_members?: boolean;
-    remove_members?: boolean;
-    view_all_profiles?: boolean;
-  };
-  // Teams
-  teams?: {
-    view_teams?: boolean;
-    create_teams?: boolean;
-    edit_teams?: boolean;
-    delete_teams?: boolean;
-    manage_team_members?: boolean;
-    assign_team_leads?: boolean;
-  };
-  // Departments
-  departments?: {
-    view_departments?: boolean;
-    create_departments?: boolean;
-    edit_departments?: boolean;
-    delete_departments?: boolean;
-    move_departments?: boolean;
-    assign_team_to_department?: boolean;
-  };
-  // Listings
-  listings?: {
-    create?: boolean;
-    edit_own?: boolean;
-    edit_any?: boolean;
-    delete?: boolean;
-    approve?: boolean;
-    view_all?: boolean;
-    max_approval_amount?: number;
-  };
-  // Analytics
-  analytics?: {
-    view_own?: boolean;
-    view_own_team?: boolean;
-    view_department?: boolean;
-    view_company?: boolean;
-  };
-  // Settings & Administration
-  settings?: {
-    manage_company?: boolean;
-    manage_roles?: boolean;
-    manage_permissions?: boolean;
-    view_settings?: boolean;
-  };
+/**
+ * Simplified permissions structure - only 3 flags
+ * Permissions are determined by roleType + scope + maxApprovalAmount
+ */
+export type SimplifiedPermissions = {
+  canManageStructure?: boolean;   // Create/edit teams, departments, add members
+  canApproveListings?: boolean;    // Approve listings (up to maxApprovalAmount)
+  canAccessSettings?: boolean;     // Access company settings
 };
+
+// Keep old type for backward compatibility during transition (can be removed later)
+export type RolePermissions = SimplifiedPermissions;
 
 export type MaterialSpecifications = {
   purity?: string;
@@ -172,9 +133,6 @@ export const users = pgTable(
       onDelete: 'set null',
     }),
     status: statusEnum('status').default('active').notNull(),
-    permissions: jsonb('permissions')
-      .$type<RolePermissions>()
-      .default({}),
     metadata: jsonb('metadata').default({}),
     lastLoginAt: timestamp('last_login_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -345,10 +303,12 @@ export const roles = pgTable(
       .notNull(),
     name: varchar('name', { length: 100 }).notNull(),
     description: text('description'),
+    roleType: roleTypeEnum('role_type').notNull(),
     permissions: jsonb('permissions')
-      .$type<RolePermissions>()
+      .$type<SimplifiedPermissions>()
       .notNull()
       .default({}),
+    maxApprovalAmount: decimal('max_approval_amount', { precision: 12, scale: 2 }).default('0'),
     isSystemRole: boolean('is_system_role').default(false).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -361,6 +321,9 @@ export const roles = pgTable(
       .where(sql`${table.deletedAt} IS NULL`),
     index('idx_roles_system')
       .on(table.isSystemRole)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index('idx_roles_type')
+      .on(table.roleType)
       .where(sql`${table.deletedAt} IS NULL`),
     index('idx_roles_permissions').using('gin', table.permissions),
   ],
@@ -378,6 +341,10 @@ export const userRoles = pgTable(
       .notNull(),
     scopeType: scopeTypeEnum('scope_type').notNull(),
     scopeId: uuid('scope_id'),
+    maxApprovalAmountOverride: decimal('max_approval_amount_override', {
+      precision: 12,
+      scale: 2,
+    }),
     grantedAt: timestamp('granted_at').defaultNow().notNull(),
     grantedByUserId: uuid('granted_by_user_id').references(() => users.id),
   },
@@ -525,9 +492,6 @@ export const invitations = pgTable(
       .notNull(),
     teamId: uuid('team_id').references(() => teams.id, { onDelete: 'set null' }),
     roleId: uuid('role_id').references(() => roles.id, { onDelete: 'set null' }),
-    permissions: jsonb('permissions')
-      .$type<RolePermissions>()
-      .default({}),
     token: varchar('token', { length: 255 }).notNull().unique(),
     inviteCode: varchar('invite_code', { length: 10 }).notNull().unique(),
     expiresAt: timestamp('expires_at').notNull(),
