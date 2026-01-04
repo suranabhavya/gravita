@@ -5,8 +5,8 @@ class MemberRoleDto {
   @IsEmail()
   email: string;
 
-  @IsEnum(['admin', 'manager', 'member', 'viewer'])
-  roleType: 'admin' | 'manager' | 'member' | 'viewer';
+  @IsEnum(['admin', 'manager', 'lead', 'member'])
+  roleType: 'admin' | 'manager' | 'lead' | 'member';
 }
 
 export class CompleteSignupDto {
@@ -44,8 +44,8 @@ export class CompleteSignupDto {
   memberEmails?: string[];
 
   @IsOptional()
-  @IsEnum(['admin', 'manager', 'member', 'viewer'])
-  roleType?: 'admin' | 'manager' | 'member' | 'viewer';
+  @IsEnum(['admin', 'manager', 'lead', 'member'])
+  roleType?: 'admin' | 'manager' | 'lead' | 'member';
 
   @IsOptional()
   @IsArray()

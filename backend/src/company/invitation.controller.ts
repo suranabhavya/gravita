@@ -2,7 +2,9 @@ import { Controller, Post, Body, UseGuards, Get, Param } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { InvitationService } from './invitation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { InviteMembersDto } from './dto/invite-members.dto';
 import { ValidateInvitationDto } from './dto/validate-invitation.dto';
 
@@ -14,7 +16,8 @@ export class InvitationController {
   ) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequirePermission({ action: 'manage_structure' })
   async inviteMembers(@Body() inviteMembersDto: InviteMembersDto, @CurrentUser() user: any) {
     // If roleType is provided but not roleId, find or create the role
     let roleId = inviteMembersDto.roleId;
@@ -57,9 +60,9 @@ export class InvitationController {
             canApproveListings: false,
             canAccessSettings: false,
           },
-          viewer: {
-            canManageStructure: false,
-            canApproveListings: false,
+          lead: {
+            canManageStructure: true,
+            canApproveListings: true,
             canAccessSettings: false,
           },
         };
@@ -67,15 +70,15 @@ export class InvitationController {
         const roleNames = {
           admin: 'Company Admin',
           manager: 'Manager',
+          lead: 'Team Lead',
           member: 'Team Member',
-          viewer: 'Viewer',
         };
         
         const maxAmounts = {
           admin: '999999999',
           manager: '500000',
+          lead: '50000',
           member: '0',
-          viewer: '0',
         };
         
         const [newRole] = await db

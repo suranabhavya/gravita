@@ -1,17 +1,88 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { db } from '../database';
-import { users, teamMembers, teams, userRoles, roles, departments } from '../database/schema';
-import { eq, and, isNull, sql, or, like, ilike } from 'drizzle-orm';
+import { users, teamMembers, teams, userRoles, roles, departments, departmentTeams, departmentHierarchy } from '../database/schema';
+import { eq, and, isNull, sql, or, like, ilike, inArray } from 'drizzle-orm';
+import { PermissionsService } from './permissions.service';
 
 @Injectable()
 export class UserService {
-  async getCompanyMembers(companyId: string, filters?: { search?: string; teamId?: string; roleId?: string }) {
+  constructor(private readonly permissionsService: PermissionsService) {}
+
+  async getCompanyMembers(companyId: string, filters?: { search?: string; teamId?: string; roleId?: string; requestingUserId?: string }) {
+    // Get user's permission context to filter by scope
+    let scopedUserIds: string[] | null = null;
+    
+    if (filters?.requestingUserId) {
+      try {
+        const context = await this.permissionsService.getUserPermissionContext(filters.requestingUserId, companyId);
+        
+        // If user has company scope, they can see all members
+        if (context.scopeType === 'company' && !context.scopeId) {
+          scopedUserIds = null; // No filtering needed
+        }
+        // If user has department scope, get all members in teams under that department
+        else if (context.scopeType === 'department' && context.scopeId) {
+          // Get all descendant departments using closure table
+          const descendantDepts = await db
+            .select({ deptId: departmentHierarchy.descendantId })
+            .from(departmentHierarchy)
+            .where(eq(departmentHierarchy.ancestorId, context.scopeId));
+          
+          const deptIds = [context.scopeId, ...descendantDepts.map(d => d.deptId)];
+          
+          // Get teams in those departments
+          const teamsInDepts = await db
+            .select({ teamId: departmentTeams.teamId })
+            .from(departmentTeams)
+            .where(inArray(departmentTeams.departmentId, deptIds));
+          
+          const teamIds = teamsInDepts.map(t => t.teamId);
+          
+          if (teamIds.length === 0) {
+            scopedUserIds = [];
+          } else {
+            // Get users in those teams
+            const usersInTeams = await db
+              .select({ userId: teamMembers.userId })
+              .from(teamMembers)
+              .where(inArray(teamMembers.teamId, teamIds));
+            
+            scopedUserIds = usersInTeams.map(u => u.userId);
+          }
+        }
+        // If user has team scope, they can only see members of their team
+        else if (context.scopeType === 'team' && context.scopeId) {
+          const usersInTeam = await db
+            .select({ userId: teamMembers.userId })
+            .from(teamMembers)
+            .where(eq(teamMembers.teamId, context.scopeId));
+          
+          scopedUserIds = usersInTeam.map(u => u.userId);
+        }
+      } catch (error) {
+        // If permission context fails, default to no users
+        scopedUserIds = [];
+      }
+    }
     // Build where conditions dynamically
     const whereConditions = [
       eq(users.companyId, companyId),
       isNull(users.deletedAt),
       eq(users.status, 'active'),
     ];
+
+    // Apply scope filtering if needed
+    if (scopedUserIds !== null) {
+      if (scopedUserIds.length === 0) {
+        // No users in scope, return empty result
+        return {
+          members: [],
+          groupedByTeam: {},
+          unassignedCount: 0,
+        };
+      }
+      whereConditions.push(inArray(users.id, scopedUserIds));
+    }
 
     if (filters?.search) {
       whereConditions.push(

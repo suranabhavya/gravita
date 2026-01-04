@@ -7,15 +7,65 @@ import {
   teams,
   users,
   teamMembers,
+  userRoles,
+  roles,
 } from '../database/schema';
 import { eq, and, isNull, sql, inArray } from 'drizzle-orm';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { MoveTeamToDepartmentDto } from './dto/move-team-to-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { PermissionsService } from './permissions.service';
 
 @Injectable()
 export class DepartmentService {
-  async getCompanyDepartments(companyId: string) {
+  constructor(private readonly permissionsService: PermissionsService) {}
+
+  async getCompanyDepartments(companyId: string, requestingUserId?: string) {
+    // Get user's permission context to filter by scope
+    let scopedDepartmentIds: string[] | null = null;
+    
+    if (requestingUserId) {
+      try {
+        const context = await this.permissionsService.getUserPermissionContext(requestingUserId, companyId);
+        
+        // If user has company scope, they can see all departments
+        if (context.scopeType === 'company' && !context.scopeId) {
+          scopedDepartmentIds = null; // No filtering needed
+        }
+        // If user has department scope, get that department and all its descendants using closure table
+        else if (context.scopeType === 'department' && context.scopeId) {
+          // Get all descendant departments using closure table (O(1) query!)
+          const descendantDepts = await db
+            .select({ deptId: departmentHierarchy.descendantId })
+            .from(departmentHierarchy)
+            .where(eq(departmentHierarchy.ancestorId, context.scopeId));
+          
+          scopedDepartmentIds = [context.scopeId, ...descendantDepts.map(d => d.deptId)];
+        }
+        // If user has team scope, they cannot see departments
+        else if (context.scopeType === 'team') {
+          scopedDepartmentIds = [];
+        }
+      } catch (error) {
+        // If permission context fails, default to no departments
+        scopedDepartmentIds = [];
+      }
+    }
+    // Build where conditions
+    const whereConditions = [
+      eq(departments.companyId, companyId),
+      isNull(departments.deletedAt)
+    ];
+    
+    // Apply scope filtering if needed
+    if (scopedDepartmentIds !== null) {
+      if (scopedDepartmentIds.length === 0) {
+        // No departments in scope, return empty array
+        return [];
+      }
+      whereConditions.push(inArray(departments.id, scopedDepartmentIds));
+    }
+
     const companyDepartments = await db
       .select({
         id: departments.id,
@@ -42,7 +92,7 @@ export class DepartmentService {
       })
       .from(departments)
       .leftJoin(users, eq(departments.managerUserId, users.id))
-      .where(and(eq(departments.companyId, companyId), isNull(departments.deletedAt)))
+      .where(and(...whereConditions))
       .orderBy(departments.level, departments.name);
 
     // Get teams for each department
@@ -620,6 +670,175 @@ export class DepartmentService {
     for (const child of children) {
       await this._rebuildDepartmentPathAndHierarchy(child.id, companyId);
     }
+  }
+
+  /**
+   * Create department from existing teams (People-First approach)
+   * Upgrades manager role if specified
+   */
+  async createDepartmentFromTeams(dto: {
+    companyId: string;
+    createdByUserId: string;
+    departmentName: string;
+    description?: string;
+    teamIds: string[];
+    managerUserId?: string;
+    parentDepartmentId?: string;
+  }) {
+    // Verify teams belong to company
+    const teamList = await db
+      .select()
+      .from(teams)
+      .where(
+        and(
+          inArray(teams.id, dto.teamIds),
+          eq(teams.companyId, dto.companyId),
+          isNull(teams.deletedAt),
+        ),
+      );
+
+    if (teamList.length !== dto.teamIds.length) {
+      throw new BadRequestException('Some teams do not belong to your company');
+    }
+
+    // Verify manager belongs to company if provided
+    if (dto.managerUserId) {
+      const [managerUser] = await db
+        .select()
+        .from(users)
+        .where(
+          and(
+            eq(users.id, dto.managerUserId),
+            eq(users.companyId, dto.companyId),
+            isNull(users.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!managerUser) {
+        throw new BadRequestException('Manager must belong to your company');
+      }
+    }
+
+    // Verify parent department if provided
+    if (dto.parentDepartmentId) {
+      const [parentDept] = await db
+        .select()
+        .from(departments)
+        .where(
+          and(
+            eq(departments.id, dto.parentDepartmentId),
+            eq(departments.companyId, dto.companyId),
+            isNull(departments.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!parentDept) {
+        throw new NotFoundException('Parent department not found');
+      }
+    }
+
+    return await db.transaction(async (tx) => {
+      // 1. Determine level and path
+      let level = 1;
+      let path = '/';
+
+      if (dto.parentDepartmentId) {
+        const [parent] = await tx
+          .select({ level: departments.level, path: departments.path })
+          .from(departments)
+          .where(eq(departments.id, dto.parentDepartmentId))
+          .limit(1);
+
+        if (parent) {
+          level = parent.level + 1;
+          path = `${parent.path}/${dto.parentDepartmentId}`;
+        }
+      }
+
+      // 2. Create department
+      const [newDept] = await tx
+        .insert(departments)
+        .values({
+          companyId: dto.companyId,
+          name: dto.departmentName,
+          description: dto.description,
+          parentDepartmentId: dto.parentDepartmentId,
+          level,
+          path,
+          managerUserId: dto.managerUserId,
+        })
+        .returning();
+
+      const deptId = newDept.id;
+
+      // 3. Insert into closure table (self + all ancestors)
+      await tx
+        .insert(departmentHierarchy)
+        .values({
+          ancestorId: deptId,
+          descendantId: deptId,
+          depth: 0,
+        })
+        .onConflictDoNothing();
+
+      if (dto.parentDepartmentId) {
+        // Copy all ancestors of parent, incrementing depth
+        const parentAncestors = await tx
+          .select()
+          .from(departmentHierarchy)
+          .where(eq(departmentHierarchy.descendantId, dto.parentDepartmentId));
+
+        if (parentAncestors.length > 0) {
+          await tx.insert(departmentHierarchy).values(
+            parentAncestors.map(ancestor => ({
+              ancestorId: ancestor.ancestorId,
+              descendantId: deptId,
+              depth: ancestor.depth + 1,
+            })),
+          ).onConflictDoNothing();
+        }
+      }
+
+      // 4. Link teams to department
+      const teamLinks = dto.teamIds.map(teamId => ({
+        departmentId: deptId,
+        teamId,
+      }));
+
+      await tx.insert(departmentTeams).values(teamLinks).onConflictDoNothing();
+
+      // 5. If manager specified, upgrade their role
+      if (dto.managerUserId) {
+        // Get "Manager" role
+        const [managerRole] = await tx
+          .select()
+          .from(roles)
+          .where(
+            and(
+              eq(roles.companyId, dto.companyId),
+              eq(roles.roleType, 'manager'),
+              isNull(roles.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (managerRole) {
+          // Update user's role to department scope
+          await tx
+            .update(userRoles)
+            .set({
+              roleId: managerRole.id,
+              scopeType: 'department',
+              scopeId: deptId,
+            })
+            .where(eq(userRoles.userId, dto.managerUserId));
+        }
+      }
+
+      return this.getDepartmentById(deptId, dto.companyId);
+    });
   }
 }
 

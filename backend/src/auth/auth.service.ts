@@ -287,9 +287,9 @@ export class AuthService {
             canApproveListings: false,
             canAccessSettings: false,
           },
-          viewer: {
-            canManageStructure: false,
-            canApproveListings: false,
+          lead: {
+            canManageStructure: true,
+            canApproveListings: true,
             canAccessSettings: false,
           },
         };
@@ -297,15 +297,15 @@ export class AuthService {
         const roleNames = {
           admin: 'Company Admin',
           manager: 'Manager',
+          lead: 'Team Lead',
           member: 'Team Member',
-          viewer: 'Viewer',
         };
 
         const maxAmounts = {
           admin: '999999999',
           manager: '500000',
+          lead: '50000',
           member: '0',
-          viewer: '0',
         };
 
         const [newRole] = await db
@@ -497,7 +497,7 @@ export class AuthService {
         });
 
       // Helper function to find or create role by type
-      const findOrCreateRole = async (roleType: 'admin' | 'manager' | 'member' | 'viewer'): Promise<string> => {
+      const findOrCreateRole = async (roleType: 'admin' | 'manager' | 'lead' | 'member'): Promise<string> => {
         // Try to find existing role with this type
         const [existingRole] = await tx
           .select()
@@ -532,9 +532,9 @@ export class AuthService {
             canApproveListings: false,
             canAccessSettings: false,
           },
-          viewer: {
-            canManageStructure: false,
-            canApproveListings: false,
+          lead: {
+            canManageStructure: true,
+            canApproveListings: true,
             canAccessSettings: false,
           },
         };
@@ -542,15 +542,15 @@ export class AuthService {
         const roleNames = {
           admin: 'Company Admin',
           manager: 'Manager',
+          lead: 'Team Lead',
           member: 'Team Member',
-          viewer: 'Viewer',
         };
 
         const maxAmounts = {
           admin: '999999999',
           manager: '500000',
+          lead: '50000',
           member: '0',
-          viewer: '0',
         };
 
         const [newRole] = await tx
@@ -572,7 +572,7 @@ export class AuthService {
       const createdInvitations = [];
       if (signupDto.memberEmails && signupDto.memberEmails.length > 0) {
         // Create a map of email to roleType
-        const emailRoleMap = new Map<string, 'admin' | 'manager' | 'member' | 'viewer'>();
+        const emailRoleMap = new Map<string, 'admin' | 'manager' | 'lead' | 'member'>();
         
         // If memberRoles is provided, use it; otherwise use roleType for all
         if (signupDto.memberRoles && signupDto.memberRoles.length > 0) {

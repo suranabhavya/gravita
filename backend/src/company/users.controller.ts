@@ -1,8 +1,10 @@
-import { Controller, Get, Param, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Query, ForbiddenException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PermissionGuard } from '../auth/guards/permission.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -19,19 +21,42 @@ export class UsersController {
     @Query('teamId') teamId?: string,
     @Query('roleId') roleId?: string,
   ) {
+    // Scope filtering will be handled in service layer
     return this.userService.getCompanyMembers(user.companyId, {
       search,
       teamId,
       roleId,
+      requestingUserId: user.userId,
     });
   }
 
   @Get('stats')
+  @UseGuards(PermissionGuard)
+  @RequirePermission({ action: 'manage_structure' })
   async getCompanyStats(@CurrentUser() user: any) {
     return this.userService.getCompanyStats(user.companyId);
   }
 
+  @Get('me/permission-context')
+  async getMyPermissionContext(
+    @Query('companyId') companyId: string,
+    @CurrentUser() user: any,
+  ) {
+    // Automatically use the authenticated user's ID
+    const context = await this.permissionsService.getUserPermissionContext(
+      user.userId,
+      companyId || user.companyId,
+    );
+    return context;
+  }
+
   @Get(':id')
+  @UseGuards(PermissionGuard)
+  @RequirePermission({
+    action: 'manage_structure',
+    targetType: 'user',
+    getTargetId: (req) => req.params.id,
+  })
   async getUserById(@Param('id') id: string, @CurrentUser() user: any) {
     const userData = await this.userService.getUserById(id, user.companyId);
     const roleInfo = await this.permissionsService.getUserRoleInfo(id, user.companyId);
@@ -51,6 +76,24 @@ export class UsersController {
       roleInfo,
       permissions,
     };
+  }
+
+  @Get(':id/permission-context')
+  async getPermissionContext(
+    @Param('id') id: string,
+    @Query('companyId') companyId: string,
+    @CurrentUser() user: any,
+  ) {
+    // Ensure user can only access their own context or is admin
+    if (id !== user.userId && user.roleType !== 'admin') {
+      throw new ForbiddenException('You can only access your own permission context');
+    }
+    
+    const context = await this.permissionsService.getUserPermissionContext(
+      id,
+      companyId || user.companyId,
+    );
+    return context;
   }
 
   // Note: updateUserPermissions removed - users now get permissions through roles only

@@ -1,14 +1,70 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { db } from '../database';
-import { teams, teamMembers, users, companies, materialListings, departmentTeams } from '../database/schema';
+import { teams, teamMembers, users, companies, materialListings, departmentTeams, userRoles, roles, departmentHierarchy } from '../database/schema';
 import { eq, and, isNull, sql, count, desc, inArray } from 'drizzle-orm';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { AddTeamMembersDto } from './dto/add-team-members.dto';
+import { PermissionsService } from './permissions.service';
 
 @Injectable()
 export class TeamService {
-  async getCompanyTeams(companyId: string) {
+  constructor(private readonly permissionsService: PermissionsService) {}
+
+  async getCompanyTeams(companyId: string, requestingUserId?: string) {
+    // Get user's permission context to filter by scope
+    let scopedTeamIds: string[] | null = null;
+    
+    if (requestingUserId) {
+      try {
+        const context = await this.permissionsService.getUserPermissionContext(requestingUserId, companyId);
+        
+        // If user has company scope, they can see all teams
+        if (context.scopeType === 'company' && !context.scopeId) {
+          scopedTeamIds = null; // No filtering needed
+        }
+        // If user has department scope, get all teams in that department and its descendants
+        else if (context.scopeType === 'department' && context.scopeId) {
+          // Get all descendant departments using closure table
+          const descendantDepts = await db
+            .select({ deptId: departmentHierarchy.descendantId })
+            .from(departmentHierarchy)
+            .where(eq(departmentHierarchy.ancestorId, context.scopeId));
+          
+          const deptIds = [context.scopeId, ...descendantDepts.map(d => d.deptId)];
+          
+          // Get teams in those departments
+          const teamsInDepts = await db
+            .select({ teamId: departmentTeams.teamId })
+            .from(departmentTeams)
+            .where(inArray(departmentTeams.departmentId, deptIds));
+          
+          scopedTeamIds = teamsInDepts.map(t => t.teamId);
+        }
+        // If user has team scope, they can only see their own team
+        else if (context.scopeType === 'team' && context.scopeId) {
+          scopedTeamIds = [context.scopeId];
+        }
+      } catch (error) {
+        // If permission context fails, default to no teams
+        scopedTeamIds = [];
+      }
+    }
+    // Build where conditions
+    const whereConditions = [
+      eq(teams.companyId, companyId),
+      isNull(teams.deletedAt)
+    ];
+    
+    // Apply scope filtering if needed
+    if (scopedTeamIds !== null) {
+      if (scopedTeamIds.length === 0) {
+        // No teams in scope, return empty array
+        return [];
+      }
+      whereConditions.push(inArray(teams.id, scopedTeamIds));
+    }
+
     const companyTeams = await db
       .select({
         id: teams.id,
@@ -34,7 +90,7 @@ export class TeamService {
       })
       .from(teams)
       .leftJoin(users, eq(teams.teamLeadUserId, users.id))
-      .where(and(eq(teams.companyId, companyId), isNull(teams.deletedAt)))
+      .where(and(...whereConditions))
       .orderBy(desc(teams.createdAt));
 
     return companyTeams;
@@ -360,6 +416,148 @@ export class TeamService {
     await db.delete(departmentTeams).where(eq(departmentTeams.teamId, teamId));
 
     return { success: true };
+  }
+
+  /**
+   * Get unassigned members (for creating teams)
+   * Members with company scope and no scopeId
+   */
+  async getUnassignedMembers(companyId: string) {
+    return await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(users)
+      .innerJoin(userRoles, eq(users.id, userRoles.userId))
+      .where(
+        and(
+          eq(users.companyId, companyId),
+          eq(userRoles.scopeType, 'company'),
+          isNull(userRoles.scopeId),
+          eq(users.status, 'active'),
+          isNull(users.deletedAt),
+        ),
+      );
+  }
+
+  /**
+   * Create team from selected members (People-First approach)
+   * Updates member scopes from company to team
+   */
+  async createTeamFromMembers(dto: {
+    companyId: string;
+    createdByUserId: string;
+    teamName: string;
+    location?: string;
+    description?: string;
+    memberUserIds: string[];
+    teamLeadUserId?: string;
+    teamLeadApprovalLimit?: number;
+  }) {
+    // Verify all members belong to company and are unassigned
+    const memberUsers = await db
+      .select()
+      .from(users)
+      .innerJoin(userRoles, eq(users.id, userRoles.userId))
+      .where(
+        and(
+          inArray(users.id, dto.memberUserIds),
+          eq(users.companyId, dto.companyId),
+          eq(userRoles.scopeType, 'company'),
+          isNull(userRoles.scopeId),
+          isNull(users.deletedAt),
+        ),
+      );
+
+    if (memberUsers.length !== dto.memberUserIds.length) {
+      throw new BadRequestException('Some members are not unassigned or do not belong to your company');
+    }
+
+    // Verify team lead is in member list if provided
+    if (dto.teamLeadUserId && !dto.memberUserIds.includes(dto.teamLeadUserId)) {
+      throw new BadRequestException('Team lead must be one of the selected members');
+    }
+
+    return await db.transaction(async (tx) => {
+      // 1. Create team
+      const [newTeam] = await tx
+        .insert(teams)
+        .values({
+          companyId: dto.companyId,
+          name: dto.teamName,
+          location: dto.location,
+          description: dto.description,
+          teamLeadUserId: dto.teamLeadUserId,
+        })
+        .returning();
+
+      const teamId = newTeam.id;
+
+      // 2. Add members to team
+      const memberInserts = dto.memberUserIds.map(userId => ({
+        teamId,
+        userId,
+      }));
+
+      await tx.insert(teamMembers).values(memberInserts);
+
+      // 3. Update all members' userRoles to team scope
+      await tx
+        .update(userRoles)
+        .set({
+          scopeType: 'team',
+          scopeId: teamId,
+        })
+        .where(
+          and(
+            inArray(userRoles.userId, dto.memberUserIds),
+            eq(userRoles.scopeType, 'company'),
+            isNull(userRoles.scopeId),
+          ),
+        );
+
+      // 4. If team lead specified, upgrade their role
+      if (dto.teamLeadUserId) {
+        // Get "Team Lead" role
+        const [leadRole] = await tx
+          .select()
+          .from(roles)
+          .where(
+            and(
+              eq(roles.companyId, dto.companyId),
+              eq(roles.roleType, 'lead'),
+              isNull(roles.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (leadRole) {
+          // Update user's role
+          await tx
+            .update(userRoles)
+            .set({
+              roleId: leadRole.id,
+              scopeType: 'team',
+              scopeId: teamId,
+              maxApprovalAmountOverride: dto.teamLeadApprovalLimit 
+                ? dto.teamLeadApprovalLimit.toString() 
+                : null,
+            })
+            .where(eq(userRoles.userId, dto.teamLeadUserId));
+
+          // Update team with lead
+          await tx
+            .update(teams)
+            .set({ teamLeadUserId: dto.teamLeadUserId })
+            .where(eq(teams.id, teamId));
+        }
+      }
+
+      return this.getTeamById(teamId, dto.companyId);
+    });
   }
 }
 

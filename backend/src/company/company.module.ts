@@ -11,6 +11,7 @@ import { UserService } from './user.service';
 import { InvitationService } from './invitation.service';
 import { PermissionsService } from './permissions.service';
 import { AuthModule } from '../auth/auth.module';
+import { PermissionGuard } from '../auth/guards/permission.guard';
 
 @Module({
   imports: [AuthModule],
@@ -21,8 +22,8 @@ import { AuthModule } from '../auth/auth.module';
     UsersController,
     InvitationController,
   ],
-  providers: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService],
-  exports: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService],
+  providers: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService, PermissionGuard],
+  exports: [CompanyService, TeamService, DepartmentService, UserService, InvitationService, PermissionsService, PermissionGuard],
 })
 export class CompanyModule {}
 

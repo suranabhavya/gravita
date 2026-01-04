@@ -15,7 +15,7 @@ export class SignupStep3Dto {
   roleId?: string;
 
   @IsOptional()
-  @IsEnum(['admin', 'manager', 'member', 'viewer'])
-  roleType?: 'admin' | 'manager' | 'member' | 'viewer';
+  @IsEnum(['admin', 'manager', 'lead', 'member'])
+  roleType?: 'admin' | 'manager' | 'lead' | 'member';
 }
 

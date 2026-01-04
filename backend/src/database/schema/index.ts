@@ -34,7 +34,7 @@ export const listingStatusEnum = pgEnum('listing_status', [
   'cancelled',
 ]);
 export const scopeTypeEnum = pgEnum('scope_type', ['company', 'department', 'team']);
-export const roleTypeEnum = pgEnum('role_type', ['admin', 'manager', 'member', 'viewer']);
+export const roleTypeEnum = pgEnum('role_type', ['admin', 'manager', 'lead', 'member']);
 export const approvalActionEnum = pgEnum('approval_action', [
   'approved',
   'rejected',
