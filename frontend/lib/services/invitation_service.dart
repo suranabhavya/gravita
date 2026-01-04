@@ -3,19 +3,33 @@ import 'api_service.dart';
 
 class InvitationService {
   Future<Map<String, dynamic>> inviteMembers({
-    required String email,
+    String? email, // Deprecated: use emails instead
+    List<String>? emails, // Preferred: list of emails
     String? teamId,
     String? roleId,
     String? roleType, // 'admin', 'manager', 'member', 'viewer'
   }) async {
+    // Support both single email (backward compatibility) and list of emails
+    final emailList = emails ?? (email != null ? [email] : []);
+    
+    if (emailList.isEmpty) {
+      throw Exception('At least one email address is required');
+    }
+
     final body = {
-      'emails': [email], // Backend expects array
+      'emails': emailList, // Backend expects array
       if (teamId != null) 'teamId': teamId,
       if (roleId != null) 'roleId': roleId,
       if (roleType != null) 'roleType': roleType,
     };
 
+    print('[InvitationService] Sending invitation request with ${emailList.length} emails: $emailList');
+    print('[InvitationService] Request body: $body');
+
     final response = await ApiService.post('/invitations', body, includeAuth: true);
+    
+    print('[InvitationService] Response status: ${response.statusCode}');
+    print('[InvitationService] Response body: ${response.body}');
 
     if (response.statusCode == 201 || response.statusCode == 200) {
       return jsonDecode(response.body);

@@ -5,6 +5,7 @@ import '../../models/team_model.dart';
 import '../../models/user_model.dart';
 import '../../widgets/team_card.dart';
 import '../../widgets/glass_container.dart';
+import '../../widgets/permission_gate.dart';
 
 class TeamsTab extends StatelessWidget {
   final List<TeamListItem> teams;
@@ -56,19 +57,22 @@ class TeamsTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => onCreateTeamFromUnassigned([]),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: Text(
-                      'Create Team from Unassigned',
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF0d2818),
-                        fontWeight: FontWeight.w700,
+                PermissionGate(
+                  permission: 'manage_structure',
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => onCreateTeamFromUnassigned([]),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        'Create Team from Unassigned',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF0d2818),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),

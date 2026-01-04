@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../widgets/glass_container.dart';
 import '../../widgets/glass_text_field.dart';
 import '../../services/auth_service.dart';
+import '../../providers/permission_provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -67,6 +69,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       );
 
       if (mounted) {
+        // Load permission context after successful login
+        final permissionProvider = Provider.of<PermissionProvider>(context, listen: false);
+        await permissionProvider.loadPermissionContext();
+        
         Navigator.of(context).pushReplacementNamed('/home');
       }
     } catch (e) {

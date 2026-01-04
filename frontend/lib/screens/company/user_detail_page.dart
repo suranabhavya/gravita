@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
-import '../../models/permissions_model.dart';
+import '../../models/permission_context_model.dart';
 import '../../widgets/glass_container.dart';
-import '../../widgets/permissions_selector.dart';
 import '../../services/permissions_service.dart';
+import '../../services/company_service.dart';
+import '../../providers/permission_provider.dart';
 
 class UserDetailPage extends StatefulWidget {
   final User user;
@@ -20,47 +22,46 @@ class UserDetailPage extends StatefulWidget {
 
 class _UserDetailPageState extends State<UserDetailPage> {
   final _permissionsService = PermissionsService();
-  UserPermissions? _permissions;
+  final _companyService = CompanyService();
+  PermissionContext? _permissionContext;
   bool _isLoadingPermissions = true;
-  bool _isEditingPermissions = false;
 
   @override
   void initState() {
     super.initState();
-    _loadPermissions();
+    _loadPermissionContext();
   }
 
-  Future<void> _loadPermissions() async {
+  Future<void> _loadPermissionContext() async {
     try {
       setState(() => _isLoadingPermissions = true);
-      final permissions = await _permissionsService.getUserPermissions(widget.user.id);
-      setState(() {
-        _permissions = permissions;
-        _isLoadingPermissions = false;
-      });
+      
+      // Try to get companyId from PermissionProvider first
+      final permissionProvider = Provider.of<PermissionProvider>(context, listen: false);
+      String? companyId = permissionProvider.context?.companyId;
+      
+      // If not available, get from company service
+      if (companyId == null || companyId.isEmpty) {
+        try {
+          final company = await _companyService.getCompany();
+          companyId = company.id;
+        } catch (e) {
+          print('Error loading company: $e');
+        }
+      }
+      
+      if (companyId != null && companyId.isNotEmpty) {
+        final context = await _permissionsService.getPermissionContext(widget.user.id, companyId);
+        setState(() {
+          _permissionContext = context;
+          _isLoadingPermissions = false;
+        });
+      } else {
+        setState(() => _isLoadingPermissions = false);
+      }
     } catch (e) {
-      print('Error loading permissions: $e');
+      print('Error loading permission context: $e');
       setState(() => _isLoadingPermissions = false);
-    }
-  }
-
-  Future<void> _savePermissions() async {
-    if (_permissions == null) return;
-    
-    try {
-      await _permissionsService.updateUserPermissions(widget.user.id, _permissions!);
-      if (mounted) {
-        setState(() => _isEditingPermissions = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permissions updated successfully')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update permissions: $e')),
-        );
-      }
     }
   }
 
@@ -515,55 +516,13 @@ class _UserDetailPageState extends State<UserDetailPage> {
               ),
               const SizedBox(width: 12),
               Text(
-                'Permissions',
+                'Role & Permissions',
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
-              const Spacer(),
-              if (!_isEditingPermissions)
-                TextButton(
-                  onPressed: () {
-                    setState(() => _isEditingPermissions = true);
-                  },
-                  child: Text(
-                    'Edit',
-                    style: GoogleFonts.inter(
-                      color: Colors.green,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        setState(() => _isEditingPermissions = false);
-                        _loadPermissions(); // Reload to discard changes
-                      },
-                      child: Text(
-                        'Cancel',
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: _savePermissions,
-                      child: Text(
-                        'Save',
-                        style: GoogleFonts.inter(
-                          color: Colors.green,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -571,18 +530,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
             )
-          else if (_isEditingPermissions && _permissions != null)
-            PermissionsSelector(
-              initialPermissions: _permissions,
-              onPermissionsChanged: (permissions) {
-                setState(() => _permissions = permissions);
-              },
-            )
-          else if (_permissions != null)
-            _buildPermissionsDisplay()
+          else if (_permissionContext != null)
+            _buildPermissionContextDisplay()
           else
             Text(
-              'No permissions assigned',
+              'No role assigned',
               style: GoogleFonts.inter(
                 color: Colors.white.withValues(alpha: 0.6),
               ),
@@ -592,118 +544,106 @@ class _UserDetailPageState extends State<UserDetailPage> {
     );
   }
 
-  Widget _buildPermissionsDisplay() {
-    final hasAnyPermission = _permissions?.people != null ||
-        _permissions?.teams != null ||
-        _permissions?.departments != null ||
-        _permissions?.listings != null ||
-        _permissions?.analytics != null ||
-        _permissions?.settings != null;
-
-    if (!hasAnyPermission) {
-      return Text(
-        'No permissions assigned',
-        style: GoogleFonts.inter(
-          color: Colors.white.withValues(alpha: 0.6),
-        ),
-      );
-    }
-
+  Widget _buildPermissionContextDisplay() {
+    final context = _permissionContext!;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_permissions?.people != null) _buildPermissionCategory('People & Members', _permissions!.people!),
-        if (_permissions?.teams != null) _buildPermissionCategory('Teams', _permissions!.teams!),
-        if (_permissions?.departments != null) _buildPermissionCategory('Departments', _permissions!.departments!),
-        if (_permissions?.listings != null) _buildPermissionCategory('Listings', _permissions!.listings!),
-        if (_permissions?.analytics != null) _buildPermissionCategory('Analytics', _permissions!.analytics!),
-        if (_permissions?.settings != null) _buildPermissionCategory('Settings', _permissions!.settings!),
+        // Role Type
+        _buildInfoRow(
+          Icons.badge,
+          'Role',
+          _getRoleDisplayName(context.roleType),
+        ),
+        const SizedBox(height: 12),
+        
+        // Scope
+        _buildInfoRow(
+          Icons.account_tree,
+          'Scope',
+          _getScopeDisplayName(context.scopeType, context.scopeId),
+        ),
+        const SizedBox(height: 12),
+        
+        // Max Approval Amount
+        if (context.permissions.canApproveListings) ...[
+          _buildInfoRow(
+            Icons.attach_money,
+            'Max Approval Amount',
+            '\$${context.maxApprovalAmount.toStringAsFixed(0)}',
+          ),
+          const SizedBox(height: 12),
+        ],
+        
+        // Permissions
+        Text(
+          'Permissions',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.white.withValues(alpha: 0.9),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            if (context.permissions.canManageStructure)
+              _buildPermissionBadge('Manage Structure'),
+            if (context.permissions.canApproveListings)
+              _buildPermissionBadge('Approve Listings'),
+            if (context.permissions.canAccessSettings)
+              _buildPermissionBadge('Access Settings'),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _buildPermissionCategory(String category, dynamic permissions) {
-    final enabledPermissions = <String>[];
-    
-    if (permissions is PeoplePermissions) {
-      if (permissions.viewMembers == true) enabledPermissions.add('View Members');
-      if (permissions.inviteMembers == true) enabledPermissions.add('Invite Members');
-      if (permissions.editMembers == true) enabledPermissions.add('Edit Members');
-      if (permissions.removeMembers == true) enabledPermissions.add('Remove Members');
-      if (permissions.viewAllProfiles == true) enabledPermissions.add('View All Profiles');
-    } else if (permissions is TeamsPermissions) {
-      if (permissions.viewTeams == true) enabledPermissions.add('View Teams');
-      if (permissions.createTeams == true) enabledPermissions.add('Create Teams');
-      if (permissions.editTeams == true) enabledPermissions.add('Edit Teams');
-      if (permissions.deleteTeams == true) enabledPermissions.add('Delete Teams');
-      if (permissions.manageTeamMembers == true) enabledPermissions.add('Manage Team Members');
-      if (permissions.assignTeamLeads == true) enabledPermissions.add('Assign Team Leads');
-    } else if (permissions is DepartmentsPermissions) {
-      if (permissions.viewDepartments == true) enabledPermissions.add('View Departments');
-      if (permissions.createDepartments == true) enabledPermissions.add('Create Departments');
-      if (permissions.editDepartments == true) enabledPermissions.add('Edit Departments');
-      if (permissions.deleteDepartments == true) enabledPermissions.add('Delete Departments');
-      if (permissions.moveDepartments == true) enabledPermissions.add('Move Departments');
-      if (permissions.assignTeamToDepartment == true) enabledPermissions.add('Assign Teams');
-    } else if (permissions is ListingsPermissions) {
-      if (permissions.create == true) enabledPermissions.add('Create Listings');
-      if (permissions.editOwn == true) enabledPermissions.add('Edit Own Listings');
-      if (permissions.editAny == true) enabledPermissions.add('Edit Any Listings');
-      if (permissions.delete == true) enabledPermissions.add('Delete Listings');
-      if (permissions.approve == true) enabledPermissions.add('Approve Listings');
-      if (permissions.viewAll == true) enabledPermissions.add('View All Listings');
-    } else if (permissions is AnalyticsPermissions) {
-      if (permissions.viewOwn == true) enabledPermissions.add('View Own Analytics');
-      if (permissions.viewOwnTeam == true) enabledPermissions.add('View Team Analytics');
-      if (permissions.viewDepartment == true) enabledPermissions.add('View Department Analytics');
-      if (permissions.viewCompany == true) enabledPermissions.add('View Company Analytics');
-    } else if (permissions is SettingsPermissions) {
-      if (permissions.viewSettings == true) enabledPermissions.add('View Settings');
-      if (permissions.manageCompany == true) enabledPermissions.add('Manage Company');
-      if (permissions.manageRoles == true) enabledPermissions.add('Manage Roles');
-      if (permissions.managePermissions == true) enabledPermissions.add('Manage Permissions');
-    }
-
-    if (enabledPermissions.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            category,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.9),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: enabledPermissions.map((perm) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.green.withValues(alpha: 0.5),
-                ),
-              ),
-              child: Text(
-                perm,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: Colors.green.shade300,
-                ),
-              ),
-            )).toList(),
-          ),
-        ],
+  Widget _buildPermissionBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.green.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          color: Colors.green.shade300,
+        ),
       ),
     );
+  }
+
+  String _getRoleDisplayName(RoleType roleType) {
+    switch (roleType) {
+      case RoleType.admin:
+        return 'Company Admin';
+      case RoleType.manager:
+        return 'Manager';
+      case RoleType.lead:
+        return 'Team Lead';
+      case RoleType.member:
+        return 'Team Member';
+    }
+  }
+
+  String _getScopeDisplayName(ScopeType scopeType, String? scopeId) {
+    switch (scopeType) {
+      case ScopeType.company:
+        return 'Company-wide';
+      case ScopeType.department:
+        return scopeId != null ? 'Department (${scopeId.substring(0, 8)}...)' : 'Department';
+      case ScopeType.team:
+        return scopeId != null ? 'Team (${scopeId.substring(0, 8)}...)' : 'Team';
+    }
   }
 
   void _showUserMenu(BuildContext context) {

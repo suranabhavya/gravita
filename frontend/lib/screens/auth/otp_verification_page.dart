@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'dart:ui';
 import '../../widgets/glass_container.dart';
 import '../../services/auth_service.dart';
+import '../../providers/permission_provider.dart';
 
 class OtpVerificationPage extends StatefulWidget {
   final String userId;
@@ -98,6 +100,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> with SingleTi
       await _authService.verifyOtp(widget.userId, otp);
 
       if (mounted) {
+        // Load permission context after OTP verification
+        final permissionProvider = Provider.of<PermissionProvider>(context, listen: false);
+        await permissionProvider.loadPermissionContext();
+        
         // If onVerified callback is provided, call it and await it
         if (widget.onVerified != null) {
           try {

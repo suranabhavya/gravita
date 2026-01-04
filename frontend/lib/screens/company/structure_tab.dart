@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../models/department_model.dart';
 import '../../widgets/glass_container.dart';
+import '../../widgets/permission_gate.dart';
 
 class StructureTab extends StatefulWidget {
   final List<DepartmentTree> departments;
@@ -281,19 +282,22 @@ class _StructureTabState extends State<StructureTab> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => widget.onCreateDepartment(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: Text(
-                      'Create Department',
-                      style: GoogleFonts.inter(
-                        color: const Color(0xFF0d2818),
-                        fontWeight: FontWeight.w700,
+                PermissionGate(
+                  permission: 'manage_structure',
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => widget.onCreateDepartment(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        'Create Department',
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFF0d2818),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -603,19 +607,22 @@ class _StructureTabState extends State<StructureTab> {
           ),
         ] else ...[
           const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => widget.onCreateDepartment(parentDepartmentId: _currentDepartmentId),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: Text(
-                'Add Department',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF0d2818),
-                  fontWeight: FontWeight.w700,
+          PermissionGate(
+            permission: 'manage_structure',
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => widget.onCreateDepartment(parentDepartmentId: _currentDepartmentId),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text(
+                  'Add Department',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF0d2818),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../dashboard/dashboard_page.dart';
+import '../dashboard/dashboard_router.dart';
 import '../add_material/add_material_page.dart';
-import '../company/company_page.dart';
+import '../company/company_page_router.dart';
 import '../profile/profile_page.dart';
 import '../../widgets/glass_bottom_nav_bar.dart';
 
@@ -16,9 +16,9 @@ class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
   final List<Widget> _pages = [
-    const DashboardPage(),
+    const DashboardRouter(),
     const AddMaterialPage(),
-    const CompanyPage(),
+    const CompanyPageRouter(),
     const ProfilePage(),
   ];
 
@@ -27,7 +27,11 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          _pages[_currentIndex],
+          // Page content - fill available space
+          Positioned.fill(
+            child: _pages[_currentIndex],
+          ),
+          // Bottom navigation bar
           Positioned(
             left: 0,
             right: 0,

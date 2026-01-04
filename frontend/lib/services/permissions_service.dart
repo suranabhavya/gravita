@@ -1,47 +1,48 @@
 import 'dart:convert';
-import '../models/permissions_model.dart';
+import '../models/permission_context_model.dart';
 import 'api_service.dart';
 
 class PermissionsService {
-  Future<UserPermissions> getUserPermissions(String userId) async {
+  /// Get current user's permission context from backend
+  /// Uses the /me endpoint which automatically uses the authenticated user's ID
+  Future<PermissionContext> getMyPermissionContext({String? companyId}) async {
+    final endpoint = companyId != null 
+        ? '/users/me/permission-context?companyId=$companyId'
+        : '/users/me/permission-context';
+    final response = await ApiService.get(endpoint, includeAuth: true);
+    
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return PermissionContext.fromJson(data);
+    } else {
+      throw Exception('Failed to load permission context: ${response.body}');
+    }
+  }
+
+  /// Get user's permission context from backend (for viewing other users - requires permissions)
+  /// This should be called after login to set up permissions
+  @Deprecated('Use getMyPermissionContext instead for current user')
+  Future<PermissionContext> getPermissionContext(String userId, String companyId) async {
+    final response = await ApiService.get('/users/$userId/permission-context?companyId=$companyId', includeAuth: true);
+    
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return PermissionContext.fromJson(data);
+    } else {
+      throw Exception('Failed to load permission context: ${response.body}');
+    }
+  }
+
+  /// Legacy method for backward compatibility
+  @Deprecated('Use getPermissionContext instead')
+  Future<Map<String, dynamic>> getUserPermissions(String userId) async {
     final response = await ApiService.get('/users/$userId/permissions', includeAuth: true);
     
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return UserPermissions.fromJson(data);
+      return data;
     } else {
       throw Exception('Failed to load permissions: ${response.body}');
-    }
-  }
-
-  Future<UserPermissions> updateUserPermissions(String userId, UserPermissions permissions) async {
-    try {
-      print('[PermissionsService] Updating permissions for user: $userId');
-      print('[PermissionsService] Permissions to send: ${permissions.toJson()}');
-      
-      final response = await ApiService.put(
-        '/users/$userId/permissions',
-        {'permissions': permissions.toJson()},
-        includeAuth: true,
-      );
-      
-      print('[PermissionsService] Response status: ${response.statusCode}');
-      print('[PermissionsService] Response body: ${response.body}');
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        print('[PermissionsService] Parsed data: $data');
-        // The backend returns the user object with permissions nested
-        final permissionsData = data['permissions'] ?? {};
-        return UserPermissions.fromJson(permissionsData);
-      } else {
-        final errorBody = response.body;
-        print('[PermissionsService] Error response: $errorBody');
-        throw Exception('Failed to update permissions: $errorBody');
-      }
-    } catch (e) {
-      print('[PermissionsService] Exception: $e');
-      rethrow;
     }
   }
 }
