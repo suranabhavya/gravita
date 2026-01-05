@@ -96,7 +96,44 @@ export class TeamService {
     return companyTeams;
   }
 
-  async getTeamById(teamId: string, companyId: string) {
+  async getTeamById(teamId: string, companyId: string, requestingUserId?: string) {
+    // First, check if user has access to this team based on their scope
+    if (requestingUserId) {
+      const context = await this.permissionsService.getUserPermissionContext(requestingUserId, companyId);
+
+      // If user has company scope, they can see all teams
+      if (context.scopeType !== 'company' || context.scopeId) {
+        // User has limited scope, check if they can access this team
+        if (context.scopeType === 'team' && context.scopeId !== teamId) {
+          throw new ForbiddenException('You do not have access to this team');
+        } else if (context.scopeType === 'department' && context.scopeId) {
+          // Check if team is in user's department or descendant departments
+          const descendantDepts = await db
+            .select({ deptId: departmentHierarchy.descendantId })
+            .from(departmentHierarchy)
+            .where(eq(departmentHierarchy.ancestorId, context.scopeId));
+
+          const deptIds = [context.scopeId, ...descendantDepts.map(d => d.deptId)];
+
+          // Check if team is in any of these departments
+          const [teamInDept] = await db
+            .select({ teamId: departmentTeams.teamId })
+            .from(departmentTeams)
+            .where(
+              and(
+                eq(departmentTeams.teamId, teamId),
+                inArray(departmentTeams.departmentId, deptIds)
+              )
+            )
+            .limit(1);
+
+          if (!teamInDept) {
+            throw new ForbiddenException('You do not have access to this team');
+          }
+        }
+      }
+    }
+
     const [team] = await db
       .select({
         id: teams.id,
@@ -243,6 +280,53 @@ export class TeamService {
           })),
         );
         console.log('[TeamService] Team members added:', createTeamDto.memberIds.length);
+      }
+
+      // Auto-promote team lead to 'lead' role if they are currently a 'member'
+      const teamLeadId = createTeamDto.teamLeadId || createTeamDto.memberIds[0];
+      if (teamLeadId) {
+        // Get the user's current role from userRoles table
+        const [currentUserRole] = await tx
+          .select({
+            id: userRoles.id,
+            roleId: userRoles.roleId,
+            roleType: roles.roleType,
+          })
+          .from(userRoles)
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(eq(userRoles.userId, teamLeadId))
+          .limit(1);
+
+        if (currentUserRole && currentUserRole.roleType === 'member') {
+          // Get the 'lead' system role for this company
+          const [leadRole] = await tx
+            .select()
+            .from(roles)
+            .where(
+              and(
+                eq(roles.companyId, companyId),
+                eq(roles.roleType, 'lead'),
+                eq(roles.isSystemRole, true),
+                isNull(roles.deletedAt),
+              ),
+            )
+            .limit(1);
+
+          if (leadRole) {
+            // Promote the user to team lead role with team scope
+            await tx
+              .update(userRoles)
+              .set({
+                roleId: leadRole.id,
+                scopeType: 'team',
+                scopeId: newTeam.id,
+                maxApprovalAmountOverride: null, // Use role's default
+              })
+              .where(eq(userRoles.id, currentUserRole.id));
+
+            console.log('[TeamService] Team lead promoted from member to lead:', teamLeadId);
+          }
+        }
       }
 
       return newTeam;

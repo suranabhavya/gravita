@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { db } from '../database';
 import { users, teamMembers, teams, userRoles, roles, departments, departmentTeams, departmentHierarchy } from '../database/schema';
 import { eq, and, isNull, sql, or, like, ilike, inArray } from 'drizzle-orm';
 import { PermissionsService } from './permissions.service';
+import { AssignRoleDto, RoleType, ScopeType } from './dto/assign-role.dto';
 
 @Injectable()
 export class UserService {
@@ -17,10 +18,14 @@ export class UserService {
         const context = await this.permissionsService.getUserPermissionContext(filters.requestingUserId, companyId);
         
         // If user has company scope, they can see all members
-        if (context.scopeType === 'company' && !context.scopeId) {
+        if (context.scopeType === 'company') {
           scopedUserIds = null; // No filtering needed
         }
-        // If user has department scope, get all members in teams under that department
+        // If user has department scope with null scopeId, they can see all departments (company-wide manager)
+        else if (context.scopeType === 'department' && !context.scopeId) {
+          scopedUserIds = null; // No filtering needed - can see all company members
+        }
+        // If user has department scope with specific department ID
         else if (context.scopeType === 'department' && context.scopeId) {
           // Get all descendant departments using closure table
           const descendantDepts = await db
@@ -258,6 +263,130 @@ export class UserService {
       totalTeams: stats.totalTeams || 0,
       totalDepartments: deptStats?.count || 0,
     };
+  }
+
+  async assignRole(
+    assignRoleDto: AssignRoleDto,
+    companyId: string,
+    requestingUserId: string,
+  ) {
+    const { userId, roleType, scopeType, scopeId, maxApprovalAmountOverride } = assignRoleDto;
+
+    // Verify target user exists and belongs to company
+    const [targetUser] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.id, userId),
+          eq(users.companyId, companyId),
+          isNull(users.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Get requesting user's permission context
+    const requestingUserContext = await this.permissionsService.getUserPermissionContext(
+      requestingUserId,
+      companyId,
+    );
+
+    // Permission checks based on requesting user's role
+    if (requestingUserContext.roleType === 'member') {
+      throw new ForbiddenException('Members cannot assign roles');
+    }
+
+    // Leads can only assign member roles to their own team
+    if (requestingUserContext.roleType === 'lead') {
+      if (roleType !== 'member') {
+        throw new ForbiddenException('Team leads can only assign member roles');
+      }
+      if (scopeType !== 'team' || scopeId !== requestingUserContext.scopeId) {
+        throw new ForbiddenException('Team leads can only assign roles within their team');
+      }
+    }
+
+    // Managers cannot assign admin roles
+    if (requestingUserContext.roleType === 'manager' && roleType === 'admin') {
+      throw new ForbiddenException('Managers cannot assign admin roles');
+    }
+
+    // Validate scope for role type
+    const determinedScopeType = scopeType || this.getDefaultScopeForRole(roleType);
+
+    // Determine scope ID based on role type and provided values
+    let determinedScopeId: string | null;
+    if (scopeId) {
+      // Explicitly provided scope ID
+      determinedScopeId = scopeId;
+    } else if (determinedScopeType === 'company') {
+      // Company-wide roles don't need a scope ID
+      determinedScopeId = null;
+    } else if (roleType === 'manager') {
+      // Managers without explicit department get company-wide department access (null scopeId)
+      determinedScopeId = null;
+    } else {
+      // For leads and members, use requesting user's scope (their team/department)
+      determinedScopeId = requestingUserContext.scopeId || null;
+    }
+
+    // Find system role
+    const [systemRole] = await db
+      .select()
+      .from(roles)
+      .where(
+        and(
+          eq(roles.companyId, companyId),
+          eq(roles.roleType, roleType),
+          eq(roles.isSystemRole, true),
+        ),
+      )
+      .limit(1);
+
+    if (!systemRole) {
+      throw new BadRequestException(`System role for ${roleType} not found. Please contact support.`);
+    }
+
+    // Remove existing role assignments for this user
+    await db
+      .delete(userRoles)
+      .where(eq(userRoles.userId, userId));
+
+    // Create new role assignment
+    const [newRoleAssignment] = await db
+      .insert(userRoles)
+      .values({
+        userId,
+        roleId: systemRole.id,
+        scopeType: determinedScopeType,
+        scopeId: determinedScopeId,
+        maxApprovalAmountOverride: maxApprovalAmountOverride?.toString(),
+        grantedByUserId: requestingUserId,
+        grantedAt: new Date(),
+      })
+      .returning();
+
+    return {
+      success: true,
+      roleAssignment: newRoleAssignment,
+      message: `Role ${roleType} assigned successfully`,
+    };
+  }
+
+  private getDefaultScopeForRole(roleType: RoleType): ScopeType {
+    switch (roleType) {
+      case RoleType.ADMIN:
+        return ScopeType.COMPANY;
+      case RoleType.MANAGER:
+        return ScopeType.DEPARTMENT;
+      case RoleType.LEAD:
+      case RoleType.MEMBER:
+        return ScopeType.TEAM;
+    }
   }
 }
 

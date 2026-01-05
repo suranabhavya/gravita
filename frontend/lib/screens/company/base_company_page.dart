@@ -17,6 +17,7 @@ import 'people_tab.dart';
 import 'teams_tab.dart';
 import 'structure_tab.dart';
 import 'user_detail_page.dart';
+import 'team_detail_page.dart';
 
 /// Base class for role-specific company pages
 /// Contains shared data loading and business logic
@@ -220,14 +221,35 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
         }) async {
           try {
             Navigator.of(bottomSheetContext).pop();
-            await _teamService.createTeam(
+            final newTeam = await _teamService.createTeam(
               name: name,
               description: description,
               location: location,
               memberIds: memberIds,
               teamLeadId: teamLeadId,
             );
+
+            // Optimistically add the new team to the list
+            if (mounted) {
+              setState(() {
+                _teams.add(TeamListItem(
+                  id: newTeam.id,
+                  name: newTeam.name,
+                  description: newTeam.description,
+                  location: newTeam.location,
+                  teamLeadId: newTeam.teamLead?.id,
+                  teamLeadName: newTeam.teamLead?.name,
+                  teamLeadEmail: newTeam.teamLead?.email,
+                  memberCount: newTeam.members.length,
+                  activeListingsCount: 0,
+                  createdAt: newTeam.createdAt,
+                ));
+              });
+            }
+
+            // Reload all data to ensure consistency
             await _loadData();
+
             if (mounted) {
               await Future.delayed(const Duration(milliseconds: 100));
               if (_tabController != null && _tabController!.index != 1) {
@@ -467,7 +489,14 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
         key: ValueKey('teams-${_teams.length}-${_teams.map((t) => t.id).join(',')}'),
         teams: _teams,
         unassignedCount: _membersData?.unassignedCount ?? 0,
-        onTeamTap: (team) {},
+        onTeamTap: (team) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TeamDetailPage(teamId: team.id),
+            ),
+          );
+        },
         onTeamLongPress: (team) {},
         onCreateTeam: showCreateTeamFAB ? _handleCreateTeam : () {},
         onCreateTeamFromUnassigned: (members) {

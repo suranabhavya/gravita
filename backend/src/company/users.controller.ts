@@ -1,10 +1,11 @@
-import { Controller, Get, Param, UseGuards, Query, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Query, ForbiddenException, Post, Body } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PermissionsService } from './permissions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionGuard } from '../auth/guards/permission.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermission } from '../auth/decorators/require-permission.decorator';
+import { AssignRoleDto } from './dto/assign-role.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -84,11 +85,20 @@ export class UsersController {
     @Query('companyId') companyId: string,
     @CurrentUser() user: any,
   ) {
-    // Ensure user can only access their own context or is admin
-    if (id !== user.userId && user.roleType !== 'admin') {
-      throw new ForbiddenException('You can only access your own permission context');
+    // If accessing another user's context, check if requester has permission
+    if (id !== user.userId) {
+      // Get requesting user's permission context to check their role
+      const requestingUserContext = await this.permissionsService.getUserPermissionContext(
+        user.userId,
+        companyId || user.companyId,
+      );
+
+      // Only admins and managers can view other users' permission contexts
+      if (requestingUserContext.roleType !== 'admin' && requestingUserContext.roleType !== 'manager') {
+        throw new ForbiddenException('You do not have permission to view this user\'s context');
+      }
     }
-    
+
     const context = await this.permissionsService.getUserPermissionContext(
       id,
       companyId || user.companyId,
@@ -96,7 +106,18 @@ export class UsersController {
     return context;
   }
 
-  // Note: updateUserPermissions removed - users now get permissions through roles only
-  // Use role assignment endpoints instead
+  @Post('assign-role')
+  @UseGuards(PermissionGuard)
+  @RequirePermission({ action: 'manage_structure' })
+  async assignRole(
+    @Body() assignRoleDto: AssignRoleDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.userService.assignRole(
+      assignRoleDto,
+      user.companyId,
+      user.userId,
+    );
+  }
 }
 

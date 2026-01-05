@@ -30,14 +30,9 @@ export class TeamController {
   }
 
   @Get(':id')
-  @UseGuards(PermissionGuard)
-  @RequirePermission({
-    action: 'manage_structure',
-    targetType: 'team',
-    getTargetId: (req) => req.params.id,
-  })
   async getTeamById(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.teamService.getTeamById(id, user.companyId);
+    // Scope-based access check will be done in service layer
+    return this.teamService.getTeamById(id, user.companyId, user.userId);
   }
 
   @Post()

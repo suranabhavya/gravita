@@ -6,6 +6,7 @@ import '../../models/permission_context_model.dart';
 import '../../widgets/glass_container.dart';
 import '../../services/permissions_service.dart';
 import '../../services/company_service.dart';
+import '../../services/roles_service.dart';
 import '../../providers/permission_provider.dart';
 
 class UserDetailPage extends StatefulWidget {
@@ -23,7 +24,9 @@ class UserDetailPage extends StatefulWidget {
 class _UserDetailPageState extends State<UserDetailPage> {
   final _permissionsService = PermissionsService();
   final _companyService = CompanyService();
+  final _rolesService = RolesService();
   PermissionContext? _permissionContext;
+  PermissionContext? _currentUserContext;
   bool _isLoadingPermissions = true;
 
   @override
@@ -35,11 +38,14 @@ class _UserDetailPageState extends State<UserDetailPage> {
   Future<void> _loadPermissionContext() async {
     try {
       setState(() => _isLoadingPermissions = true);
-      
+
       // Try to get companyId from PermissionProvider first
       final permissionProvider = Provider.of<PermissionProvider>(context, listen: false);
       String? companyId = permissionProvider.context?.companyId;
-      
+
+      // Load current user's context
+      _currentUserContext = permissionProvider.context;
+
       // If not available, get from company service
       if (companyId == null || companyId.isEmpty) {
         try {
@@ -49,7 +55,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
           print('Error loading company: $e');
         }
       }
-      
+
       if (companyId != null && companyId.isNotEmpty) {
         final context = await _permissionsService.getPermissionContext(widget.user.id, companyId);
         setState(() {
@@ -502,6 +508,8 @@ class _UserDetailPageState extends State<UserDetailPage> {
   }
 
   Widget _buildPermissionsSection() {
+    final canEditRole = _canEditUserRole();
+
     return GlassContainer(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -515,14 +523,22 @@ class _UserDetailPageState extends State<UserDetailPage> {
                 size: 20,
               ),
               const SizedBox(width: 12),
-              Text(
-                'Role & Permissions',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+              Expanded(
+                child: Text(
+                  'Role & Permissions',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
               ),
+              if (canEditRole && !_isLoadingPermissions)
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 20, color: Colors.white),
+                  onPressed: () => _showEditRoleDialog(),
+                  tooltip: 'Edit Role',
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -542,6 +558,31 @@ class _UserDetailPageState extends State<UserDetailPage> {
         ],
       ),
     );
+  }
+
+  bool _canEditUserRole() {
+    if (_currentUserContext == null) return false;
+
+    // Members cannot edit roles
+    if (_currentUserContext!.roleType == RoleType.member) return false;
+
+    // Can't edit your own role
+    if (_currentUserContext!.userId == widget.user.id) return false;
+
+    // Admins can edit all roles
+    if (_currentUserContext!.roleType == RoleType.admin) return true;
+
+    // Managers can edit non-admin roles
+    if (_currentUserContext!.roleType == RoleType.manager) {
+      return _permissionContext?.roleType != RoleType.admin;
+    }
+
+    // Leads can only edit member roles
+    if (_currentUserContext!.roleType == RoleType.lead) {
+      return _permissionContext?.roleType == RoleType.member;
+    }
+
+    return false;
   }
 
   Widget _buildPermissionContextDisplay() {
@@ -643,6 +684,394 @@ class _UserDetailPageState extends State<UserDetailPage> {
         return scopeId != null ? 'Department (${scopeId.substring(0, 8)}...)' : 'Department';
       case ScopeType.team:
         return scopeId != null ? 'Team (${scopeId.substring(0, 8)}...)' : 'Team';
+    }
+  }
+
+  void _showEditRoleDialog() {
+    if (_currentUserContext == null || _permissionContext == null) return;
+
+    final availableRoles = _rolesService.getAvailableRolesForUser(_currentUserContext!.roleType);
+    final currentRole = _permissionContext!.roleType;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        RoleType? selectedRole = currentRole;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final selectedRoleInfo = _rolesService.getRolePermissionInfo(selectedRole!);
+
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF0d2818),
+                      Color(0xFF1a4d2e),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.badge,
+                            color: Colors.white.withValues(alpha: 0.9),
+                            size: 24,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Edit Role',
+                              style: GoogleFonts.inter(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: () => Navigator.pop(dialogContext),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Content - Scrollable
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                          // User Info
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                  child: Text(
+                                    widget.user.name.substring(0, 1).toUpperCase(),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      widget.user.name,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      widget.user.email,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        color: Colors.white.withValues(alpha: 0.6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // Role Selection
+                          Text(
+                            'Select Role',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          ...availableRoles.map((role) {
+                            final roleInfo = _rolesService.getRolePermissionInfo(role);
+                            final isSelected = selectedRole == role;
+
+                            return GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedRole = role;
+                                });
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.green.withValues(alpha: 0.2)
+                                      : Colors.black.withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Colors.green
+                                        : Colors.white.withValues(alpha: 0.1),
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                                      color: isSelected ? Colors.green : Colors.white.withValues(alpha: 0.5),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        roleInfo.title,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+
+                          const SizedBox(height: 16),
+
+                          // Permissions Preview
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.1),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedRoleInfo.title,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  selectedRoleInfo.description,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: Colors.white.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Permissions:',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ...selectedRoleInfo.permissions.map((perm) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle,
+                                            size: 16,
+                                            color: Colors.green.withValues(alpha: 0.8),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              perm,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12,
+                                                color: Colors.white.withValues(alpha: 0.8),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.attach_money,
+                                      size: 16,
+                                      color: Colors.amber.withValues(alpha: 0.8),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Approval Limit: ${selectedRoleInfo.approvalLimit}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.amber.withValues(alpha: 0.9),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 24),
+
+                          // Action Buttons
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextButton(
+                                  onPressed: () => Navigator.pop(dialogContext),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Cancel',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: selectedRole != currentRole
+                                      ? () => _assignRole(dialogContext, selectedRole!)
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    backgroundColor: Colors.green,
+                                    disabledBackgroundColor: Colors.grey.withValues(alpha: 0.3),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Save Changes',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _assignRole(BuildContext dialogContext, RoleType newRole) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+
+      // Assign role
+      await _rolesService.assignRole(
+        userId: widget.user.id,
+        roleType: newRole,
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Close edit dialog
+      if (mounted) Navigator.pop(dialogContext);
+
+      // Reload permission context
+      await _loadPermissionContext();
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Role updated successfully',
+              style: GoogleFonts.inter(color: Colors.white),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to update role: ${e.toString()}',
+              style: GoogleFonts.inter(color: Colors.white),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

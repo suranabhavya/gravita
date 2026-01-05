@@ -137,10 +137,19 @@ class TeamStats {
   });
 
   factory TeamStats.fromJson(Map<String, dynamic> json) {
+    // Parse totalValue which can be a string, int, or double from backend
+    double parseTotalValue(dynamic value) {
+      if (value == null) return 0.0;
+      if (value is double) return value;
+      if (value is int) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
     return TeamStats(
       memberCount: json['memberCount'] ?? 0,
       activeListingsCount: json['activeListingsCount'] ?? 0,
-      totalValue: (json['totalValue'] ?? 0).toDouble(),
+      totalValue: parseTotalValue(json['totalValue']),
     );
   }
 

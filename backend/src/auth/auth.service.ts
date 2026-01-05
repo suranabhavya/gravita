@@ -470,22 +470,67 @@ export class AuthService {
         })
         .returning();
 
-      const [companyAdminRole] = await tx
+      // Create all 4 system roles for the company
+      const systemRoles = await tx
         .insert(roles)
-        .values({
-          companyId,
-          name: 'Company Admin',
-          description: 'Full access to company resources',
-          roleType: 'admin',
-          isSystemRole: true,
-          permissions: {
-            canManageStructure: true,
-            canApproveListings: true,
-            canAccessSettings: true,
+        .values([
+          {
+            companyId,
+            name: 'Company Admin',
+            description: 'Full control over company',
+            roleType: 'admin',
+            isSystemRole: true,
+            permissions: {
+              canManageStructure: true,
+              canApproveListings: true,
+              canAccessSettings: true,
+            },
+            maxApprovalAmount: '999999999',
           },
-          maxApprovalAmount: '999999999', // Unlimited for admin
-        })
+          {
+            companyId,
+            name: 'Manager',
+            description: 'Manages departments and approves listings',
+            roleType: 'manager',
+            isSystemRole: true,
+            permissions: {
+              canManageStructure: true,
+              canApproveListings: true,
+              canAccessSettings: false,
+            },
+            maxApprovalAmount: '500000',
+          },
+          {
+            companyId,
+            name: 'Team Lead',
+            description: 'Leads a team and approves small listings',
+            roleType: 'lead',
+            isSystemRole: true,
+            permissions: {
+              canManageStructure: true,
+              canApproveListings: true,
+              canAccessSettings: false,
+            },
+            maxApprovalAmount: '50000',
+          },
+          {
+            companyId,
+            name: 'Team Member',
+            description: 'Creates material listings',
+            roleType: 'member',
+            isSystemRole: true,
+            permissions: {
+              canManageStructure: false,
+              canApproveListings: false,
+              canAccessSettings: false,
+            },
+            maxApprovalAmount: '0',
+          },
+        ])
         .returning();
+
+      // Assign admin role to the first user
+      const companyAdminRole = systemRoles.find(r => r.roleType === 'admin')!;
 
       await tx
         .insert(userRoles)
