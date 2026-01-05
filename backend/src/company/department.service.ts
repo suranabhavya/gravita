@@ -319,6 +319,57 @@ export class DepartmentService {
     // Build hierarchy records
     await this.buildHierarchy(newDepartment.id, companyId);
 
+    // Auto-promote manager to 'manager' role with department scope if they are assigned
+    if (createDepartmentDto.managerId) {
+      // Get the user's current role from userRoles table
+      const [currentUserRole] = await db
+        .select({
+          id: userRoles.id,
+          roleId: userRoles.roleId,
+          roleType: roles.roleType,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, createDepartmentDto.managerId))
+        .limit(1);
+
+      // Only promote if they're not already a manager or admin
+      if (currentUserRole && (currentUserRole.roleType === 'member' || currentUserRole.roleType === 'lead')) {
+        // Get the 'manager' system role for this company
+        const [managerRole] = await db
+          .select()
+          .from(roles)
+          .where(
+            and(
+              eq(roles.companyId, companyId),
+              eq(roles.roleType, 'manager'),
+              eq(roles.isSystemRole, true),
+              isNull(roles.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        if (managerRole) {
+          // Promote the user to manager role with department scope
+          await db
+            .update(userRoles)
+            .set({
+              roleId: managerRole.id,
+              scopeType: 'department',
+              scopeId: newDepartment.id,
+              maxApprovalAmountOverride: null, // Use role's default
+            })
+            .where(eq(userRoles.id, currentUserRole.id));
+
+          console.log('[DepartmentService] User promoted to manager for department:', {
+            userId: createDepartmentDto.managerId,
+            departmentId: newDepartment.id,
+            previousRole: currentUserRole.roleType,
+          });
+        }
+      }
+    }
+
     return this.getDepartmentById(newDepartment.id, companyId);
   }
 

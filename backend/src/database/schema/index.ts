@@ -120,9 +120,7 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    companyId: uuid('company_id')
-      .references(() => companies.id, { onDelete: 'cascade' })
-      .notNull(),
+    companyId: uuid('company_id').references(() => companies.id, { onDelete: 'cascade' }),
     email: varchar('email', { length: 255 }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     phone: varchar('phone', { length: 20 }),
@@ -140,7 +138,6 @@ export const users = pgTable(
     deletedAt: timestamp('deleted_at'),
   },
   (table) => [
-    unique('users_company_email_unique').on(table.companyId, table.email),
     index('idx_users_company')
       .on(table.companyId)
       .where(sql`${table.deletedAt} IS NULL`),

@@ -406,14 +406,14 @@ class _StructureTabState extends State<StructureTab> {
                       ),
                     ),
                   ),
-                  if (team.location != null)
-                    Text(
-                      team.location!,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
+                  // if (team.location != null)
+                  //   Text(
+                  //     team.location!,
+                  //     style: GoogleFonts.inter(
+                  //       fontSize: 11,
+                  //       color: Colors.white.withValues(alpha: 0.5),
+                  //     ),
+                  //   ),
                   const SizedBox(width: 8),
                   Text(
                     '${team.memberCount} members',
@@ -431,6 +431,32 @@ class _StructureTabState extends State<StructureTab> {
           if (hasSubDepartments) ...[
             ...dept.children.map((child) => _buildDepartmentTree(child, level: level + 1)),
           ],
+          // Add subdepartment button
+          PermissionGate(
+            permission: 'manage_structure',
+            child: Padding(
+              padding: EdgeInsets.only(left: (level + 1) * 24.0 + 20, top: 8, bottom: 8),
+              child: TextButton.icon(
+                onPressed: () => widget.onCreateDepartment(parentDepartmentId: dept.id),
+                icon: Icon(
+                  Icons.add_circle_outline,
+                  color: Colors.white.withValues(alpha: 0.7),
+                  size: 18,
+                ),
+                label: Text(
+                  'Add Subdepartment',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+              ),
+            ),
+          ),
         ],
       ],
     );

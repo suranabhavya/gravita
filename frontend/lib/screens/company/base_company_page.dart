@@ -109,33 +109,12 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
   }
 
   Future<void> _handleCreateDepartment({String? parentDepartmentId}) async {
-    if (_teams.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Create teams first before creating departments'),
-          ),
-        );
-      }
-      return;
-    }
-
+    // Calculate unassigned teams (if any)
     final assignedTeamIds = <String>{};
     for (final dept in _departments) {
       _collectTeamIds(dept, assignedTeamIds);
     }
     final unassignedTeams = _teams.where((t) => !assignedTeamIds.contains(t.id)).toList();
-
-    if (unassignedTeams.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All teams are already assigned to departments'),
-          ),
-        );
-      }
-      return;
-    }
 
     final availableManagers = _membersData?.members ?? [];
     final parentContext = context;
@@ -165,8 +144,12 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
               managerId: managerId,
               teamIds: teamIds,
             );
+
+            // Reload all data to ensure consistency
             await _loadData();
+
             if (mounted) {
+              // Navigate to structure tab (last tab)
               await Future.delayed(const Duration(milliseconds: 100));
               if (_tabController != null && _tabController!.index != tabCount - 1) {
                 _tabController!.animateTo(tabCount - 1);

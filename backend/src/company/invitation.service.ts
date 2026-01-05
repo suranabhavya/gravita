@@ -260,54 +260,28 @@ export class InvitationService {
           .onConflictDoNothing();
       }
 
-      // 4. Assign role if specified
+      // 4. Assign role if specified in invitation
       if (invitation.roleId) {
         const { userRoles } = await import('../database/schema');
-        await tx
+
+        console.log('[InvitationService] Assigning role to user:', {
+          userId: user.id,
+          roleId: invitation.roleId,
+          scopeType: invitation.teamId ? 'team' : 'company',
+          scopeId: invitation.teamId || null,
+        });
+
+        const result = await tx
           .insert(userRoles)
           .values({
             userId: user.id,
             roleId: invitation.roleId,
             scopeType: invitation.teamId ? 'team' : 'company',
-            scopeId: invitation.teamId || invitation.companyId,
+            scopeId: invitation.teamId || null, // null for company scope
           })
-          .onConflictDoNothing();
-      }
+          .returning();
 
-      // 5. Clean up temporary company if it exists and has no other users
-      if (oldCompanyId && oldCompanyId !== invitation.companyId) {
-        // Check if this is a temporary company (name is "Temporary Company")
-        const [oldCompany] = await tx
-          .select()
-          .from(companies)
-          .where(eq(companies.id, oldCompanyId))
-          .limit(1);
-
-        if (oldCompany && oldCompany.name === 'Temporary Company') {
-          // Check if there are any other users in this company (excluding the current user)
-          const otherUsers = await tx
-            .select()
-            .from(users)
-            .where(
-              and(
-                eq(users.companyId, oldCompanyId),
-                sql`${users.id} != ${userId}`
-              )
-            )
-            .limit(1);
-
-          // If no other users, soft delete the temporary company
-          if (otherUsers.length === 0) {
-            await tx
-              .update(companies)
-              .set({ deletedAt: new Date() })
-              .where(eq(companies.id, oldCompanyId));
-            
-            console.log(`[InvitationService] Soft deleted temporary company: ${oldCompanyId}`);
-          } else {
-            console.log(`[InvitationService] Keeping temporary company ${oldCompanyId} - has other users`);
-          }
-        }
+        console.log('[InvitationService] Role assignment result:', result);
       }
     });
 

@@ -69,12 +69,13 @@ class _CreateDepartmentBottomSheetState extends State<CreateDepartmentBottomShee
       );
       return;
     }
-    if (_currentStep == 1 && _selectedTeamIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one team')),
-      );
-      return;
-    }
+    // Allow proceeding even if no teams are selected (for parent/grouping departments)
+    // if (_currentStep == 1 && _selectedTeamIds.isEmpty) {
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    //     const SnackBar(content: Text('Please select at least one team')),
+    //   );
+    //   return;
+    // }
 
     if (_currentStep < 2) {
       _pageController.nextPage(

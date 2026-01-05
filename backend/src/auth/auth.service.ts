@@ -79,17 +79,8 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(signupDto.password, 10);
     const userId = randomUUID();
-    const tempCompanyId = randomUUID();
 
-    await db
-      .insert(companies)
-      .values({
-        id: tempCompanyId,
-        name: 'Temporary Company',
-        companyType: 'supplier',
-        status: 'active',
-      });
-
+    // Create user without company - they will join/create a company later
     const [newUser] = await db
       .insert(users)
       .values({
@@ -98,7 +89,7 @@ export class AuthService {
         name: signupDto.name,
         phone: signupDto.phone,
         passwordHash,
-        companyId: tempCompanyId,
+        companyId: null, // No company yet - will be set when they create company or accept invite
         status: 'invited',
       })
       .returning();
@@ -162,13 +153,8 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
-    const [existingCompany] = await db
-      .select()
-      .from(companies)
-      .where(eq(companies.id, user.companyId))
-      .limit(1);
-
-    if (!existingCompany || existingCompany.name !== 'Temporary Company') {
+    // Check if user already has a company
+    if (user.companyId) {
       throw new BadRequestException('Company already created for this user');
     }
 

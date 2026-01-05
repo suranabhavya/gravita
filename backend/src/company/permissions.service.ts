@@ -45,6 +45,8 @@ export class PermissionsService {
    * This is the main method called at auth time
    */
   async getUserPermissionContext(userId: string, companyId: string): Promise<UserPermissionContext> {
+    console.log('[PermissionsService] Getting permission context for:', { userId, companyId });
+
     // Get user's role assignment
     const userRoleData = await db
       .select({
@@ -66,7 +68,24 @@ export class PermissionsService {
       )
       .limit(1);
 
+    console.log('[PermissionsService] User role data found:', userRoleData);
+
     if (!userRoleData.length) {
+      // Debug: Check if user has ANY role assigned (without company filter)
+      const anyRole = await db
+        .select({
+          roleId: userRoles.roleId,
+          userId: userRoles.userId,
+          roleCompanyId: roles.companyId,
+          scopeType: userRoles.scopeType,
+          scopeId: userRoles.scopeId,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, userId))
+        .limit(1);
+
+      console.log('[PermissionsService] User has role (any company):', anyRole);
       throw new Error('User has no role assigned');
     }
 
