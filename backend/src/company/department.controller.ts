@@ -7,6 +7,7 @@ import { RequirePermission } from '../auth/decorators/require-permission.decorat
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { MoveTeamToDepartmentDto } from './dto/move-team-to-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { GroupDepartmentsDto } from './dto/group-departments.dto';
 
 @Controller('departments')
 @UseGuards(JwtAuthGuard)
@@ -101,6 +102,16 @@ export class DepartmentController {
       createdByUserId: user.userId,
       ...dto,
     });
+  }
+
+  @Post('group')
+  @UseGuards(PermissionGuard)
+  @RequirePermission({ action: 'manage_structure' })
+  async groupDepartments(
+    @Body() groupDepartmentsDto: GroupDepartmentsDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.departmentService.groupDepartments(user.companyId, groupDepartmentsDto);
   }
 }
 

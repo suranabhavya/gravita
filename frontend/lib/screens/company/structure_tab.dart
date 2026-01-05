@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../models/department_model.dart';
 import '../../widgets/glass_container.dart';
 import '../../widgets/permission_gate.dart';
+import '../../widgets/group_departments_bottom_sheet.dart';
 
 class StructureTab extends StatefulWidget {
   final List<DepartmentTree> departments;
@@ -10,6 +11,13 @@ class StructureTab extends StatefulWidget {
   final Function({String? parentDepartmentId}) onCreateDepartment;
   final Function(DepartmentTree department)? onDepartmentTap;
   final Function(DepartmentTree department)? onDepartmentLongPress;
+  final Function({
+    required String name,
+    String? description,
+    String? managerId,
+    required List<String> departmentIds,
+  })? onGroupDepartments;
+  final List<dynamic> availableManagers;
 
   const StructureTab({
     super.key,
@@ -18,6 +26,8 @@ class StructureTab extends StatefulWidget {
     required this.onCreateDepartment,
     this.onDepartmentTap,
     this.onDepartmentLongPress,
+    this.onGroupDepartments,
+    this.availableManagers = const [],
   });
 
   @override
@@ -27,14 +37,37 @@ class StructureTab extends StatefulWidget {
 class _StructureTabState extends State<StructureTab> {
   bool _isTreeView = true;
   final Map<String, bool> _expandedDepartments = {};
-  
+
   // For compact view drill-down navigation
   String? _currentDepartmentId;
   List<DepartmentTree> _navigationStack = [];
 
+  // For select mode (grouping departments)
+  bool _isSelectMode = false;
+  final Set<String> _selectedDepartmentIds = {};
+
   void _toggleDepartment(String departmentId) {
     setState(() {
       _expandedDepartments[departmentId] = !(_expandedDepartments[departmentId] ?? false);
+    });
+  }
+
+  void _toggleSelectMode() {
+    setState(() {
+      _isSelectMode = !_isSelectMode;
+      if (!_isSelectMode) {
+        _selectedDepartmentIds.clear();
+      }
+    });
+  }
+
+  void _toggleDepartmentSelection(String departmentId) {
+    setState(() {
+      if (_selectedDepartmentIds.contains(departmentId)) {
+        _selectedDepartmentIds.remove(departmentId);
+      } else {
+        _selectedDepartmentIds.add(departmentId);
+      }
     });
   }
 
@@ -91,33 +124,67 @@ class _StructureTabState extends State<StructureTab> {
                       color: Colors.white,
                     ),
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildToggleButton('Tree', _isTreeView, () {
-                          setState(() {
-                            _isTreeView = true;
-                            _currentDepartmentId = null;
-                            _navigationStack = [];
-                          });
-                        }),
-                        _buildToggleButton('Compact', !_isTreeView, () {
-                          setState(() {
-                            _isTreeView = false;
-                            _currentDepartmentId = null;
-                            _navigationStack = [];
-                          });
-                        }),
-                      ],
-                    ),
+                  Row(
+                    children: [
+                      if (!_isSelectMode)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildToggleButton('Tree', _isTreeView, () {
+                                setState(() {
+                                  _isTreeView = true;
+                                  _currentDepartmentId = null;
+                                  _navigationStack = [];
+                                });
+                              }),
+                              _buildToggleButton('Compact', !_isTreeView, () {
+                                setState(() {
+                                  _isTreeView = false;
+                                  _currentDepartmentId = null;
+                                  _navigationStack = [];
+                                });
+                              }),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(width: 12),
+                      // Select/Cancel button
+                      if (widget.departments.isNotEmpty)
+                        PermissionGate(
+                          permission: 'manage_structure',
+                          child: TextButton(
+                            onPressed: _toggleSelectMode,
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              backgroundColor: _isSelectMode
+                                  ? Colors.white.withValues(alpha: 0.2)
+                                  : Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              _isSelectMode ? 'Cancel' : 'Select',
+                              style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -133,7 +200,97 @@ class _StructureTabState extends State<StructureTab> {
         Expanded(
           child: _isTreeView ? _buildTreeView() : _buildCompactView(),
         ),
+
+        // Bottom action bar when in select mode
+        if (_isSelectMode && _selectedDepartmentIds.isNotEmpty)
+          Container(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 24,
+              bottom: 24 + MediaQuery.of(context).padding.bottom + 80, // Account for bottom nav bar (80px) + safe area
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0d2818),
+              border: Border(
+                top: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_selectedDepartmentIds.length} department${_selectedDepartmentIds.length != 1 ? 's' : ''} selected',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _handleGroupDepartments,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: Text(
+                      'Group into Department',
+                      style: GoogleFonts.inter(
+                        color: const Color(0xFF0d2818),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
+    );
+  }
+
+  void _handleGroupDepartments() async {
+    if (widget.onGroupDepartments == null) return;
+
+    // Get the selected departments as DepartmentTree objects
+    final selectedDepts = widget.departments
+        .where((dept) => _selectedDepartmentIds.contains(dept.id))
+        .toList();
+
+    if (selectedDepts.isEmpty) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => GroupDepartmentsBottomSheet(
+        selectedDepartments: selectedDepts,
+        availableManagers: widget.availableManagers.cast(),
+        onSubmit: ({
+          required String name,
+          String? description,
+          String? managerId,
+          required List<String> departmentIds,
+        }) {
+          widget.onGroupDepartments!(
+            name: name,
+            description: description,
+            managerId: managerId,
+            departmentIds: departmentIds,
+          );
+          // Exit select mode after grouping
+          setState(() {
+            _isSelectMode = false;
+            _selectedDepartmentIds.clear();
+          });
+        },
+      ),
     );
   }
 
@@ -265,7 +422,7 @@ class _StructureTabState extends State<StructureTab> {
               children: [
                 Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.lightbulb_outline,
                       color: Colors.amber,
                       size: 20,
@@ -315,18 +472,38 @@ class _StructureTabState extends State<StructureTab> {
     final hasChildren = dept.children.isNotEmpty || dept.teams.isNotEmpty;
     final hasSubDepartments = dept.children.isNotEmpty;
     final hasTeams = dept.teams.isNotEmpty;
+    final isSelected = _selectedDepartmentIds.contains(dept.id);
+    final isTopLevel = level == 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         GestureDetector(
-          onTap: hasChildren ? () => _toggleDepartment(dept.id) : null,
+          onTap: _isSelectMode && isTopLevel
+              ? () => _toggleDepartmentSelection(dept.id)
+              : (hasChildren ? () => _toggleDepartment(dept.id) : null),
           onLongPress: widget.onDepartmentLongPress != null ? () => widget.onDepartmentLongPress!(dept) : null,
           child: Container(
             padding: EdgeInsets.only(left: level * 24.0, top: 8, bottom: 8),
+            decoration: _isSelectMode && isTopLevel && isSelected
+                ? BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  )
+                : null,
             child: Row(
               children: [
-                if (hasChildren)
+                // Checkbox in select mode (only for top-level departments)
+                if (_isSelectMode && isTopLevel)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(
+                      isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                      color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                      size: 24,
+                    ),
+                  )
+                else if (hasChildren)
                   Icon(
                     isExpanded ? Icons.expand_more : Icons.chevron_right,
                     color: Colors.white.withValues(alpha: 0.7),
@@ -659,15 +836,36 @@ class _StructureTabState extends State<StructureTab> {
   }
 
   Widget _buildDepartmentCard(DepartmentTree dept) {
+    final isSelected = _selectedDepartmentIds.contains(dept.id);
+    final isRootLevel = _currentDepartmentId == null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: _isSelectMode && isRootLevel && isSelected
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white, width: 2),
+            )
+          : null,
       child: GlassContainer(
         padding: const EdgeInsets.all(16),
         child: InkWell(
-          onTap: () => _navigateToDepartment(dept),
+          onTap: _isSelectMode && isRootLevel
+              ? () => _toggleDepartmentSelection(dept.id)
+              : () => _navigateToDepartment(dept),
           onLongPress: widget.onDepartmentLongPress != null ? () => widget.onDepartmentLongPress!(dept) : null,
           child: Row(
             children: [
+              // Checkbox in select mode (only for root-level departments)
+              if (_isSelectMode && isRootLevel)
+                Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Icon(
+                    isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.5),
+                    size: 28,
+                  ),
+                ),
               Icon(
                 Icons.business,
                 color: Colors.white,

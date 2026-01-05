@@ -100,5 +100,28 @@ class DepartmentService {
       throw Exception('Failed to update department: ${response.body}');
     }
   }
+
+  Future<Department> groupDepartments({
+    required String name,
+    String? description,
+    String? managerId,
+    required List<String> departmentIds,
+  }) async {
+    final body = {
+      'name': name,
+      if (description != null) 'description': description,
+      if (managerId != null) 'managerId': managerId,
+      'departmentIds': departmentIds,
+    };
+
+    final response = await ApiService.post('/departments/group', body, includeAuth: true);
+
+    if (response.statusCode == 201 || response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return Department.fromJson(data);
+    } else {
+      throw Exception('Failed to group departments: ${response.body}');
+    }
+  }
 }
 

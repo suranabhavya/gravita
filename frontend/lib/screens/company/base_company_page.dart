@@ -170,6 +170,45 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
     );
   }
 
+  Future<void> _handleGroupDepartments({
+    required String name,
+    String? description,
+    String? managerId,
+    required List<String> departmentIds,
+  }) async {
+    final parentContext = context;
+    final scaffoldMessenger = ScaffoldMessenger.of(parentContext);
+
+    try {
+      await _departmentService.groupDepartments(
+        name: name,
+        description: description,
+        managerId: managerId,
+        departmentIds: departmentIds,
+      );
+
+      // Reload all data to ensure consistency
+      await _loadData();
+
+      if (mounted) {
+        // Navigate to structure tab (last tab)
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_tabController != null && _tabController!.index != tabCount - 1) {
+          _tabController!.animateTo(tabCount - 1);
+        }
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text('Departments grouped successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Failed to group departments: $e')),
+        );
+      }
+    }
+  }
+
   void _collectTeamIds(DepartmentTree dept, Set<String> teamIds) {
     for (final team in dept.teams) {
       teamIds.add(team.id);
@@ -497,8 +536,22 @@ abstract class BaseCompanyPageState<T extends BaseCompanyPage> extends State<T> 
           key: ValueKey('structure-${_departments.length}'),
           departments: _departments,
           unassignedCount: _membersData?.unassignedCount ?? 0,
+          availableManagers: _membersData?.members ?? [],
           onCreateDepartment: ({String? parentDepartmentId}) {
             _handleCreateDepartment(parentDepartmentId: parentDepartmentId);
+          },
+          onGroupDepartments: ({
+            required String name,
+            String? description,
+            String? managerId,
+            required List<String> departmentIds,
+          }) {
+            _handleGroupDepartments(
+              name: name,
+              description: description,
+              managerId: managerId,
+              departmentIds: departmentIds,
+            );
           },
           onDepartmentTap: (dept) {},
           onDepartmentLongPress: (dept) {},
